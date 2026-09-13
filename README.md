@@ -15,7 +15,9 @@ what's being rebuilt, and why.
 
 Status: **early scaffolding** — architecture and module layout only, no
 working audio yet. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the build
-order.
+order and [`docs/PI_SETUP.md`](docs/PI_SETUP.md) for getting a Pi Zero 2 W
+ready as the deploy target (development happens on a desktop; the Pi is
+reached over SSH, the same shape as `adb install` for the Android app).
 
 ## Target hardware
 
