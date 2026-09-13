@@ -5,8 +5,11 @@ hardware before moving to the next. Nothing here is scheduled; it's a
 sequence, not a timeline.
 
 1. **Audio-out smoke test** — confirm the HiFiBerry board shows up as an ALSA
-   device and plays a test tone / a single file via the chosen playback
-   library (`python-vlc` or `mpv`).
+   device and plays a test tone. `scripts/smoke_test_audio.py` is stubbed
+   out for exactly this (`--list-devices` to find the HiFiBerry, then play a
+   sine tone at it) — it bypasses the app's own playback code entirely, so
+   it's the "is the hardware even wired up right" check that should pass
+   before anything else is trusted.
 2. **Local music playback** — scan a folder, build an "album" list (mirrors
    SleepRadio's "any subfolder with audio files is an album" rule), play
    sequentially, read tags via `mutagen`.
