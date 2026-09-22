@@ -3,7 +3,7 @@ name = "sleepradiopi"
 version = "0.0.1"
 description = "Standalone Raspberry Pi bedside sleep radio: local music, audiobooks, internet radio, and a TTS-DJ'd Broadcast mode, controlled by physical buttons and an LCD."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
 authors = [{ name = "Dylan Jones" }]
 

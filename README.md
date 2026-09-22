@@ -1,23 +1,38 @@
 # SleepRadioPi
 
-A standalone bedside "sleep radio" appliance for the Raspberry Pi: local
-music, audiobooks, internet radio, and a self-hosted **Broadcast Radio**
-auto-DJ with an offline text-to-speech presenter, layered with two ambient
-channels (procedural coloured noise + binaural beats) and a fading sleep
-timer. Controlled entirely by physical buttons and a small LCD — no phone,
-no touchscreen, no app.
+A **Broadcast Radio** station on a Raspberry Pi: an auto-DJ that plays your
+local music with an offline text-to-speech presenter between tracks —
+back-announcements and intros, time checks, station idents, jingles, and
+news bulletins on the hour and half past. Open the Pi's web page on any
+device on your home network and it plays like a radio station; a physical
+bedside version (amp, speakers, buttons, small display) is next.
 
-This is a **from-scratch Python reimplementation** of the ideas and audio
-algorithms in [SleepRadio](https://github.com/dylan7474/SleepRadio), an
-Android app, retargeted at a headless Pi + amp + speakers setup. See
-[`docs/SCOPE.md`](docs/SCOPE.md) for what carries over from that project,
-what's being rebuilt, and why.
+This is a **from-scratch Python reimplementation** of the Broadcast mode of
+[SleepRadio](https://github.com/dylan7474/SleepRadio), an Android app. Its
+logic (track selection, DJ scripts, time checks, news, loudness levelling,
+edge-silence trim, voice EQ) is ported closely, with the Android app's unit
+test cases ported alongside. See [`docs/SCOPE.md`](docs/SCOPE.md).
 
-Status: **early scaffolding** — architecture and module layout only, no
-working audio yet. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the build
-order and [`docs/PI_SETUP.md`](docs/PI_SETUP.md) for getting a Pi Zero 2 W
-ready as the deploy target (development happens on a desktop; the Pi is
-reached over SSH, the same shape as `adb install` for the Android app).
+Status: **the station works** — on a Pi Zero 2 W, streaming to a browser.
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's next and
+[`docs/PI_SETUP.md`](docs/PI_SETUP.md) for setting up a Pi (development
+happens on a desktop; the Pi is reached over SSH).
+
+## Listening
+
+```bash
+./scripts/deploy.sh                 # on the desktop: sync to the Pi, run the tests there
+./scripts/install_service.sh        # on the Pi, once: start the station at boot
+```
+
+Then open **http://sleepradiopi.local/** and press *Tune in*. The show starts
+when the first listener connects (welcome, a short jingle, the first track)
+and goes off air 30 seconds after the last one leaves. Settings live in
+`~/.config/sleepradiopi/config.json` on the Pi (created on first run).
+
+Music goes in `~/media/music/<Artist>/<Album>/`, jingles in `~/media/jingles/`,
+and voice packs (`model.onnx`, `tokens.txt`, `espeak-ng-data/` — the same
+files SleepRadio uses) in `voices/<name>/`.
 
 ## Target hardware
 
@@ -45,13 +60,24 @@ TTS engine statically links eSpeak-NG, which is GPL).
 
 ```
 sleepradiopi/
-  audio/       Ambient mixer: noise generator, binaural beat generator
-  playback/    Local files, audiobooks, internet radio streaming
-  broadcast/   Auto-DJ: track selection, DJ script text, jingle scheduling
-  tts/         sherpa-onnx voice pack loading + synthesis
-  io/          Physical buttons (gpiozero) + LCD display driver
-  config/      Settings persistence (paths, presets, voice, chattiness, ...)
-docs/          SCOPE.md, ROADMAP.md, hardware notes
-voices/        (git-ignored) imported voice packs — never committed
+  broadcast/   The station: show clock, DJ scripts, track selection, news, library scan
+  audio/       PCM plumbing via ffmpeg: decode, loudness scan, voice EQ, levelling
+  tts/         sherpa-onnx voice, run in a recycled worker process
+  web/         MP3 stream + the listen-in page + /api/status
+  config/      Settings (JSON)
+  io/          Physical buttons + display (not yet built)
+  playback/    Other sources (deferred: Broadcast is the focus)
+scripts/       deploy.sh, install_service.sh, smoke_test_audio.py, dev_web.py
+docs/          SCOPE.md, ROADMAP.md, PI_SETUP.md
+voices/        (git-ignored) voice packs — never committed
 tests/
 ```
+
+## Pi Zero 2 W: memory is the limit
+
+A neural voice is the heaviest part, and ~464 MB (after freeing the GPU's
+reservation) only fits **one** voice alongside the stream. So the DJ and the
+newsreader share a voice (`news_voice: "same"`), text is synthesised a
+clause at a time, and the TTS worker process is recycled when it passes
+200 MB (its buffers grow and never shrink). See `sleepradiopi/tts/worker.py`
+and the "Lessons" section of `docs/PI_SETUP.md`.

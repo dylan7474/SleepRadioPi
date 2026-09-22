@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#121316">
+<title>Sleep Radio</title>
+<style>
+  :root {
+    --bg: #121316; --panel: #1b1d22; --line: #2a2d34; --text: #e8e2d4;
+    --muted: #9c968a; --accent: #f0b44c; --accent-ink: #1a1405; --live: #e0604c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  h1 { font-size: 1.5rem; margin: 0; letter-spacing: .02em; }
+  h1 span { color: var(--accent); }
+  .badge { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .badge.live { color: var(--live); }
+  .badge.live::before { content: "● "; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: .8rem;
+          padding: 1.25rem; margin-top: 1.25rem; }
+  .kind { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .title { font-size: 1.35rem; margin: .25rem 0 0; overflow-wrap: anywhere; }
+  .artist { color: var(--muted); margin: .1rem 0 0; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 1rem; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
+  button { font: inherit; cursor: pointer; border-radius: .6rem; border: 1px solid var(--line);
+           background: transparent; color: var(--text); padding: .5rem .9rem; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #tune { width: 100%; margin-top: 1.25rem; padding: 1rem; font-size: 1.15rem; font-weight: 600;
+          background: var(--accent); color: var(--accent-ink); border: 0; }
+  .row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+  .row label { color: var(--muted); font-size: .9rem; }
+  input[type=range] { flex: 1; min-width: 8rem; accent-color: var(--accent); }
+  .sleep button { padding: .35rem .7rem; font-size: .9rem; }
+  .sleep button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  h2 { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+       margin: 0 0 .5rem; font-weight: 600; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: .4rem 0; border-top: 1px solid var(--line); display: flex; gap: .75rem; }
+  li:first-child { border-top: 0; }
+  li time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+  li .k { color: var(--accent); flex: none; width: 1.2rem; text-align: center; }
+  .muted { color: var(--muted); }
+  footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Sleep <span>Radio</span></h1>
+    <span id="badge" class="badge">Off air</span>
+  </header>
+
+  <section class="card" aria-live="polite">
+    <div id="kind" class="kind">Ready</div>
+    <p id="title" class="title">Press play to tune in</p>
+    <p id="artist" class="artist"></p>
+    <div class="bar"><div id="progress"></div></div>
+    <p id="next" class="muted" style="margin:.8rem 0 0"></p>
+  </section>
+
+  <button id="tune" type="button">▶ Tune in</button>
+
+  <section class="card">
+    <div class="row">
+      <label for="vol">Volume</label>
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8">
+    </div>
+    <div class="row sleep" role="group" aria-label="Sleep timer">
+      <label>Sleep</label>
+      <button type="button" data-min="0" aria-pressed="true">Off</button>
+      <button type="button" data-min="15" aria-pressed="false">15m</button>
+      <button type="button" data-min="30" aria-pressed="false">30m</button>
+      <button type="button" data-min="60" aria-pressed="false">1h</button>
+      <button type="button" data-min="90" aria-pressed="false">1½h</button>
+      <span id="sleepLeft" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Recently on air</h2>
+    <ul id="history"><li class="muted">Nothing yet.</li></ul>
+  </section>
+
+  <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
+    Sleep timer fades out over the last minute.</footer>
+</main>
+
+<audio id="audio" preload="none"></audio>
+<script>
+const $ = id => document.getElementById(id);
+const audio = $("audio");
+let wanted = false, sleepEnd = 0, baseVol = 0.8;
+
+try { baseVol = parseFloat(localStorage.getItem("vol") ?? "0.8"); } catch {}
+$("vol").value = baseVol;
+audio.volume = baseVol;
+
+function tuneIn() {
+  wanted = true;
+  audio.src = "/stream?t=" + Date.now();
+  audio.volume = baseVol;
+  return audio.play().then(() => setTune(true)).catch(err => { wanted = false; setTune(false); throw err; });
+}
+function tuneOut() {
+  wanted = false;
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();  // drops the connection so the station can go off air
+  setTune(false);
+}
+function setTune(on) { $("tune").textContent = on ? "■ Stop" : "▶ Tune in"; }
+$("tune").onclick = () => wanted ? tuneOut() : tuneIn().catch(() => {});
+
+// Reconnect if the stream drops while we still want it.
+["error", "stalled", "ended"].forEach(ev => audio.addEventListener(ev, () => {
+  if (wanted) setTimeout(() => { if (wanted) tuneIn().catch(() => {}); }, 3000);
+}));
+
+$("vol").oninput = e => {
+  baseVol = parseFloat(e.target.value);
+  try { localStorage.setItem("vol", baseVol); } catch {}
+  if (!sleepEnd) audio.volume = baseVol;
+};
+
+document.querySelectorAll(".sleep button").forEach(b => b.onclick = () => {
+  const min = parseInt(b.dataset.min, 10);
+  sleepEnd = min ? Date.now() + min * 60000 : 0;
+  document.querySelectorAll(".sleep button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  if (!sleepEnd) { audio.volume = baseVol; $("sleepLeft").textContent = ""; }
+});
+setInterval(() => {
+  if (!sleepEnd) return;
+  const left = sleepEnd - Date.now();
+  if (left <= 0) {
+    tuneOut(); sleepEnd = 0; audio.volume = baseVol; $("sleepLeft").textContent = "Goodnight";
+    document.querySelectorAll(".sleep button").forEach(x => x.setAttribute("aria-pressed", x.dataset.min === "0"));
+    return;
+  }
+  audio.volume = baseVol * Math.min(1, left / 60000);
+  $("sleepLeft").textContent = Math.ceil(left / 60000) + " min left";
+}, 1000);
+
+const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News" };
+const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰" };
+const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+async function poll() {
+  try {
+    const s = await (await fetch("/api/status", { cache: "no-store" })).json();
+    const badge = $("badge");
+    badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
+    badge.classList.toggle("live", s.on_air);
+    if (s.now) {
+      $("kind").textContent = KIND[s.now.kind] || s.now.kind;
+      $("title").textContent = s.now.title;
+      $("artist").textContent = s.now.artist || "";
+      const pct = s.now.duration_s ? Math.min(100, 100 * s.now.elapsed_s / s.now.duration_s) : 0;
+      $("progress").style.width = pct + "%";
+    } else if (!s.on_air) {
+      $("kind").textContent = "Ready";
+      $("title").textContent = wanted ? "Starting the show…" : "Press play to tune in";
+      $("artist").textContent = "";
+      $("progress").style.width = "0";
+    }
+    $("next").textContent = s.on_air && s.next ? `Next: ${s.next.title}${s.next.artist ? " — " + s.next.artist : ""}` : "";
+    const hist = $("history");
+    hist.replaceChildren(...(s.history.length ? s.history.map(h => {
+      const li = document.createElement("li");
+      const t = document.createElement("time"); t.textContent = hhmm(h.at);
+      const k = document.createElement("span"); k.className = "k"; k.textContent = ICON[h.kind] || "·";
+      const x = document.createElement("span"); x.textContent = h.text;
+      li.append(t, k, x);
+      return li;
+    }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing yet." })]));
+  } catch {}
+}
+poll();
+setInterval(poll, 3000);
+
+// Start playing on open where the browser allows it; otherwise the button does it.
+tuneIn().catch(() => {});
+</script>
+</body>
+</html>

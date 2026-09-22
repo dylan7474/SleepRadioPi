@@ -1,5 +1,11 @@
 # Scope
 
+> **Update 2026-09-22 — Broadcast Radio is the product.** The station and
+> its listen-in-the-browser stream are the main feature; the network
+> non-goal below no longer applies to that stream (LAN only, no auth). The
+> other sources in the feature list (local albums, audiobooks, internet
+> radio, ambient channels) are deferred. See `ROADMAP.md`.
+
 SleepRadioPi ports the *functionality* of the Android app
 [SleepRadio](https://github.com/dylan7474/SleepRadio) to a standalone
 Raspberry Pi appliance. It deliberately drops SleepRadio's phone UI (Compose

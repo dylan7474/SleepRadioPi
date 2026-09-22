@@ -1,39 +1,34 @@
 # Roadmap
 
-Rough build order — each milestone should be independently testable on real
-hardware before moving to the next. Nothing here is scheduled; it's a
-sequence, not a timeline.
+**Direction (2026-09-22): Broadcast Radio is the product.** The other
+SleepRadio sources (local albums, audiobooks, internet radio, ambient noise
+and binaural beats) are deferred and may never be built; their placeholder
+modules stay in the tree until that's decided.
 
-1. **Audio-out smoke test** — confirm the HiFiBerry board shows up as an ALSA
-   device and plays a test tone. `scripts/smoke_test_audio.py` is stubbed
-   out for exactly this (`--list-devices` to find the HiFiBerry, then play a
-   sine tone at it) — it bypasses the app's own playback code entirely, so
-   it's the "is the hardware even wired up right" check that should pass
-   before anything else is trusted.
-2. **Local music playback** — scan a folder, build an "album" list (mirrors
-   SleepRadio's "any subfolder with audio files is an album" rule), play
-   sequentially, read tags via `mutagen`.
-3. **Audiobooks** — same folder scan, but per-book resume position persisted
-   to the settings store.
-4. **Internet radio** — stream an HTTP/HLS URL, surface ICY now-playing
-   metadata if present.
-5. **Ambient mixer** — port `NoiseGenerator`/`BinauralGenerator`'s waveform
-   math to `numpy`, output via a second `sounddevice` stream mixed under
-   Channel A.
-6. **Sleep timer** — fade-and-stop Channel A on schedule; ambient channels
-   keep running.
-7. **TTS pipeline reuse** — load an imported voice pack via `sherpa-onnx`'s
-   Python binding, synthesise a test line, play it back. This should be a
-   near-direct reuse of the existing voice files, so it's a good early
-   milestone to de-risk.
-8. **Broadcast auto-DJ** — port `BroadcastSelector`/`DjScriptBuilder`'s logic
-   to Python: track selection, spoken links between tracks, jingle
-   scheduling.
-9. **Buttons + LCD** — wire physical input (`gpiozero`) and status display
-   (`luma.lcd`/`RPLCD`) to the state machine built in steps 1-8.
-10. **Integration pass** — settings persistence, config file for folder
-    paths / pin mapping / display type, error handling for missing
-    hardware/streams.
+## Done
 
-Podcasts and any future networked-control feature are explicitly deferred
-past v1 — see `docs/SCOPE.md`.
+1. **Audio-out smoke test script** — `scripts/smoke_test_audio.py` (tone to
+   the HiFiBerry). The MiniAmp's overlay is set up and it shows as card 0;
+   the tone through real speakers waits on the header being soldered.
+2. **Voice (TTS)** — the Android app's voice packs load unchanged via
+   sherpa-onnx; `tts/worker.py` runs one voice in a recycled subprocess.
+3. **Broadcast station** — ported from SleepRadio: show clock (links,
+   idents, time checks), DJ scripts and 70s hooks, track selection, jingles
+   (a short one opens the show; one every N tracks), loudness levelling,
+   edge-silence trim, voice EQ, news bulletins (BBC RSS, :00 top stories,
+   :30 softer stories, quiet hours). Time checks and bulletin time lines
+   are worded just before they're spoken, from the real clock.
+4. **Listen in a browser** — MP3 stream + page (tune in, volume, sleep
+   timer, now playing, recent history) on port 80; systemd service.
+
+## Next
+
+5. **Speakers** — solder the header, fit the MiniAmp, add an ALSA output
+   next to the MP3 one (the station writes to an `Output`, so it's the
+   same show either way; decide whether the Pi plays locally, streams, or
+   both).
+6. **Buttons + display** — a small I2C display (OLED preferred for a dark
+   bedroom) and a few buttons / a rotary encoder for volume.
+7. **Settings from the page** — voice, chattiness, jingles, news, without
+   editing JSON.
+8. **Library tools** — copying/syncing music from the desktop library.

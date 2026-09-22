@@ -1,35 +1,43 @@
 """Flat-file settings store (JSON on disk).
 
 Covers what SleepRadio's SettingsRepository persists via DataStore, adapted
-for plain filesystem paths instead of SAF tree URIs:
+for plain filesystem paths instead of SAF tree URIs. Broadcast defaults
+mirror the Android app as the user runs it (from its 2026-09-21 backup):
+maximum chattiness, jingles every 4 tracks, 70s hooks on, news on with
+quiet hours 23:00-06:00, DJ at 0.85x and the newsreader at 0.70x.
 
-    music_folder, audiobooks_folder, jingles_folder   (plain paths)
-    presets[1..4]                                     (source assignments)
-    broadcast_voice, broadcast_chattiness
-    broadcast_jingle_enabled, broadcast_jingle_every
-    broadcast_announcer_volume, broadcast_announcer_speed
-    custom_stations
-    gpio_pin_mapping, lcd_panel_type                  (Pi-specific, new)
+Unknown keys in the file are ignored, so an older/newer config never stops
+the station from starting.
 """
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
+
+DEFAULT_PATH = Path.home() / ".config" / "sleepradiopi" / "config.json"
 
 
 @dataclass
 class Settings:
-    music_folder: str | None = None
-    audiobooks_folder: str | None = None
-    jingles_folder: str | None = None
-    presets: dict = field(default_factory=dict)
-    custom_stations: list = field(default_factory=list)
-    broadcast_voice: str | None = None
-    broadcast_chattiness: str = "balanced"
-    broadcast_jingle_enabled: bool = False
+    music_folder: str | None = None       # default ~/media/music
+    jingles_folder: str | None = None     # default ~/media/jingles
+    voices_folder: str | None = None      # default <repo>/voices
+    hooks_file: str | None = None         # default ~/media/dj_hooks_70s.txt
+    broadcast_voice: str | None = "stock"      # "stock" or "personal"; None = music and jingles only
+    broadcast_chattiness: str = "maximum"
+    broadcast_jingle_enabled: bool = True
     broadcast_jingle_every: int = 4
-    broadcast_announcer_volume: float = 1.0
-    broadcast_announcer_speed: float = 1.0
+    broadcast_announcer_volume: float = 0.4    # x the speech level; 0.4 ~ level with the music
+    broadcast_announcer_speed: float = 0.85
+    broadcast_dj_hooks: bool = True
+    news_enabled: bool = True
+    news_voice: str = "same"          # "same" = the DJ voice (one voice fits a Pi Zero 2 W's RAM)
+    news_speed: float = 0.70
+    news_quiet_hours: bool = True
+    news_quiet_start_min: int = 23 * 60
+    news_quiet_end_min: int = 6 * 60
+    http_port: int = 80
+    listener_grace_s: float = 30.0   # keep broadcasting this long after the last listener leaves
     gpio_pin_mapping: dict = field(default_factory=dict)
     lcd_panel_type: str | None = None
 
@@ -37,8 +45,11 @@ class Settings:
 def load(path: Path) -> Settings:
     if not path.exists():
         return Settings()
-    return Settings(**json.loads(path.read_text()))
+    raw = json.loads(path.read_text())
+    known = {f.name for f in fields(Settings)}
+    return Settings(**{k: v for k, v in raw.items() if k in known})
 
 
 def save(path: Path, settings: Settings) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(asdict(settings), indent=2))

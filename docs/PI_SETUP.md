@@ -1,5 +1,28 @@
 # Pi Zero 2 W: dev/deploy setup
 
+## Lessons from the first real setup (2026-09-22)
+
+The Zero 2 W's 512 MB is the constraint. What it took to fit the station:
+
+- **Use Raspberry Pi OS *Lite* (64-bit).** The desktop edition was flashed
+  by mistake and ran a desktop nobody sees; fixed with
+  `sudo systemctl set-default multi-user.target`.
+- **Free the GPU's memory reservation.** The KMS display driver reserved
+  256 MB of CMA. For a headless Pi, comment out `dtoverlay=vc4-kms-v3d` in
+  `/boot/firmware/config.txt` and add `gpu_mem=16` (usable RAM 416 → 464 MB).
+- **Turn off what a radio doesn't need:** `cups`, `cups-browsed`,
+  `ModemManager`, `bluetooth`, `triggerhappy`, `rtkit-daemon` (system) and
+  the user's `pipewire`/`wireplumber`/`filter-chain` (masked). Audio goes
+  to ALSA directly.
+- **zram doesn't help here.** The swapped-out data is the voice model's
+  weights, which barely compress, so zram used as much RAM as it saved.
+- **One voice.** Measured: a voice loads at ~120 MB and grows to 230–320 MB
+  after long text; two voices plus the stream don't fit.
+- **Raspberry Pi Imager:** version 1.9.6 (pinned) can't reliably customise
+  the newer Trixie images, so use the Legacy (Bookworm) Lite image with it.
+- On first boot, wait for the clock to sync and `packagekitd` to finish
+  before `apt`.
+
 The workflow: **edit and run Claude Code on your desktop**, the Pi is the
 test device you deploy to over SSH — the same shape as the Android
 `adb install` workflow used for the SleepRadio phone app, just `rsync`/`ssh`
