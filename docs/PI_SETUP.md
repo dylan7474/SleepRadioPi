@@ -89,6 +89,19 @@ Reboot, then confirm it enumerates as an ALSA device:
 aplay -l
 ```
 
+For the volume knob (rotary encoder on GPIO17/27, push switch on GPIO22;
+wiring in the README), add:
+
+```ini
+gpio=17,27=ip,pu
+dtoverlay=rotary-encoder,pin_a=17,pin_b=27,relative_axis=1
+dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=164,label="PLAYPAUSE"
+```
+
+and put the station's user in the `input` group (`sudo usermod -aG input pi`).
+Set `"speaker_enabled": true` in `~/.config/sleepradiopi/config.json` to
+play through the amp from start-up.
+
 ## 5. Python environment
 
 ```bash

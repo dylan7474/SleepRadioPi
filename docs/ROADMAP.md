@@ -20,15 +20,27 @@ modules stay in the tree until that's decided.
    are worded just before they're spoken, from the real clock.
 4. **Listen in a browser** — MP3 stream + page (tune in, volume, sleep
    timer, now playing, recent history) on port 80; systemd service.
+5. **Speaker output** — `audio/speaker.py`: the show plays through aplay
+   (the MiniAmp) from start-up, alongside the MP3 stream; software volume
+   (the MiniAmp has none), remembered across restarts.
+6. **The knob** — a rotary encoder for volume, its push switch for pause
+   (`io/knob.py`, kernel input events). The only physical control: the
+   display and extra buttons are dropped.
+7. **Offline mode** — no time checks, time-of-day greetings or news until
+   the clock has been set from the internet since power-up.
+8. **Faster start** — track tags are cached; the station answers seconds
+   after start-up instead of a minute.
+9. **Appliance image** — a separate Buildroot image: read-only root, data
+   and music partitions, pull-the-plug tested, A/B updates over Wi-Fi.
 
 ## Next
 
-5. **Speakers** — solder the header, fit the MiniAmp, add an ALSA output
-   next to the MP3 one (the station writes to an `Output`, so it's the
-   same show either way; decide whether the Pi plays locally, streams, or
-   both).
-6. **Buttons + display** — a small I2C display (OLED preferred for a dark
-   bedroom) and a few buttons / a rotary encoder for volume.
-7. **Settings from the page** — voice, chattiness, jingles, news, without
-   editing JSON.
-8. **Library tools** — copying/syncing music from the desktop library.
+10. **Fit the hardware** — solder the header, fit the MiniAmp and the knob,
+    first sound; check for underruns and tune the knob's step/direction.
+11. **Real-time clock** — a DS3231 so the time is known offline: time checks
+    and news without a network.
+12. **A smaller web side** — once the speaker is the main output: the browser
+    stream off by default (it runs an MP3 encoder all the time), and one
+    status/settings page (now playing, volume, voice, chattiness, news,
+    recent log lines) instead of editing JSON. No updates from the page.
+13. **Library tools** — copying/syncing music from the desktop library.
