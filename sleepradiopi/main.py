@@ -41,6 +41,7 @@ def main() -> None:
     voices = Path(settings.voices_folder or REPO / "voices").expanduser()
     cfg["hooks_file"] = str(Path(settings.hooks_file or MEDIA / "dj_hooks_70s.txt").expanduser())
     cfg["scan_cache"] = Path.home() / ".cache" / "sleepradiopi" / "scans.json"
+    cfg["tag_cache"] = Path.home() / ".cache" / "sleepradiopi" / "tags.json"
 
     # One voice only: two don't fit a Pi Zero 2 W's RAM alongside the stream.
     tts = TtsWorker(voices, settings.broadcast_voice) if settings.broadcast_voice else None

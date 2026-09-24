@@ -140,7 +140,7 @@ class Station:
             if self.config.news_quiet_hours else None)
         self.news_repo = NewsRepository()
 
-        self.tracks = scan_music(self.music_dir)
+        self.tracks = scan_music(self.music_dir, cfg.get("tag_cache"))
         self.selector = BroadcastSelector(self.tracks)
         self.jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every else []
         self._jingle_paths = {j.path for j in self.jingles}
