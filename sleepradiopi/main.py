@@ -21,6 +21,9 @@ from sleepradiopi.web.stream import Mp3Output
 
 REPO = Path(__file__).resolve().parent.parent
 MEDIA = Path.home() / "media"
+# The 70s DJ hooks ship with the app, as in SleepRadio (a copy of its
+# app/src/main/assets/dj_hooks_70s.txt); hooks_file in the settings overrides.
+BUNDLED_HOOKS = Path(__file__).resolve().parent / "data" / "dj_hooks_70s.txt"
 
 
 def main() -> None:
@@ -39,7 +42,7 @@ def main() -> None:
     cfg["music_folder"] = Path(settings.music_folder or MEDIA / "music").expanduser()
     cfg["jingles_folder"] = Path(settings.jingles_folder or MEDIA / "jingles").expanduser()
     voices = Path(settings.voices_folder or REPO / "voices").expanduser()
-    cfg["hooks_file"] = str(Path(settings.hooks_file or MEDIA / "dj_hooks_70s.txt").expanduser())
+    cfg["hooks_file"] = str(Path(settings.hooks_file).expanduser() if settings.hooks_file else BUNDLED_HOOKS)
     cfg["scan_cache"] = Path.home() / ".cache" / "sleepradiopi" / "scans.json"
     cfg["tag_cache"] = Path.home() / ".cache" / "sleepradiopi" / "tags.json"
 

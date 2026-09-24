@@ -24,7 +24,7 @@ class Settings:
     music_folder: str | None = None       # default ~/media/music
     jingles_folder: str | None = None     # default ~/media/jingles
     voices_folder: str | None = None      # default <repo>/voices
-    hooks_file: str | None = None         # default ~/media/dj_hooks_70s.txt
+    hooks_file: str | None = None         # default: the bundled sleepradiopi/data/dj_hooks_70s.txt
     broadcast_voice: str | None = "stock"      # "stock" or "personal"; None = music and jingles only
     broadcast_chattiness: str = "maximum"
     broadcast_jingle_enabled: bool = True
