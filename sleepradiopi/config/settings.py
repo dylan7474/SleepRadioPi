@@ -40,6 +40,13 @@ class Settings:
     news_quiet_end_min: int = 6 * 60
     http_port: int = 80
     listener_grace_s: float = 30.0   # keep broadcasting this long after the last listener leaves
+    # Play through the Pi's own sound card (the MiniAmp) from start-up, with a
+    # rotary encoder for volume and its push switch for pause. Off by default
+    # so a desktop test run doesn't start playing out loud.
+    speaker_enabled: bool = False
+    speaker_device: str = "default"   # ALSA device for aplay
+    speaker_volume: int = 30          # 0-100 on first start; after that the knob's last setting
+    knob_step: int = 2                # volume change per click of the knob
     gpio_pin_mapping: dict = field(default_factory=dict)
     lcd_panel_type: str | None = None
 

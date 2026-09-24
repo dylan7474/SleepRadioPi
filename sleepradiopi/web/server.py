@@ -23,7 +23,7 @@ PAGE = (Path(__file__).parent / "page.html").read_bytes()
 IDLE_CLOSE_S = 30  # close a stream connection that has had no audio for this long
 
 
-def make_handler(station: Station, output: Mp3Output):
+def make_handler(station: Station, output: Mp3Output, speaker=None):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -47,11 +47,37 @@ def make_handler(station: Station, output: Mp3Output):
             if path in ("/", "/index.html"):
                 self._send(PAGE, "text/html; charset=utf-8")
             elif path == "/api/status":
-                self._send(json.dumps(station.status()).encode(), "application/json")
+                status = station.status()
+                if speaker is not None:
+                    status["speaker"] = speaker.status()
+                self._send(json.dumps(status).encode(), "application/json")
             elif path == "/stream":
                 self._stream()
             else:
                 self.send_error(404)
+
+        def do_POST(self) -> None:
+            """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
+            or {"pause": true | false | "toggle"}. Replies with the speaker's status."""
+            if urlparse(self.path).path != "/api/speaker" or speaker is None:
+                self.send_error(404)
+                return
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if "volume" in body:
+                    speaker.set_volume(int(body["volume"]))
+                if "step" in body:
+                    speaker.step(int(body["step"]))
+                if body.get("pause") == "toggle":
+                    speaker.toggle()
+                elif body.get("pause") is True:
+                    speaker.pause()
+                elif body.get("pause") is False:
+                    speaker.play()
+            except (ValueError, TypeError, AttributeError):
+                self.send_error(400)
+                return
+            self._send(json.dumps(speaker.status()).encode(), "application/json")
 
         def _stream(self) -> None:
             self.send_response(200)
@@ -77,8 +103,8 @@ def make_handler(station: Station, output: Mp3Output):
     return Handler
 
 
-def serve(station: Station, output: Mp3Output, port: int) -> None:
-    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(station, output))
+def serve(station: Station, output: Mp3Output, port: int, speaker=None) -> None:
+    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(station, output, speaker))
     server.daemon_threads = True
     log.info("Sleep Radio on http://0.0.0.0:%d/", port)
     server.serve_forever()

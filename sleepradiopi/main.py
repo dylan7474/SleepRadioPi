@@ -13,8 +13,10 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 
+from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.settings import DEFAULT_PATH, load, save
+from sleepradiopi.io.knob import Knob
 from sleepradiopi.tts.worker import TtsWorker
 from sleepradiopi.web.server import serve
 from sleepradiopi.web.stream import Mp3Output
@@ -48,9 +50,20 @@ def main() -> None:
 
     # One voice only: two don't fit a Pi Zero 2 W's RAM alongside the stream.
     tts = TtsWorker(voices, settings.broadcast_voice) if settings.broadcast_voice else None
-    output = Mp3Output()
-    station = Station(cfg, tts, output)
-    serve(station, output, args.port or settings.http_port)
+    stream = Mp3Output()
+    speaker = control = None
+    if settings.speaker_enabled:
+        speaker = SpeakerOutput(settings.speaker_device)
+        station = Station(cfg, tts, TeeOutput(speaker, stream))
+        control = SpeakerControl(
+            speaker, station.listener_joined, station.listener_left,
+            state_file=Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json",
+            default_volume=settings.speaker_volume)
+        Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle).start()
+        control.play()   # a bedside radio plays as soon as it's powered
+    else:
+        station = Station(cfg, tts, stream)
+    serve(station, stream, args.port or settings.http_port, control)
 
 
 if __name__ == "__main__":
