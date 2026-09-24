@@ -36,6 +36,7 @@ from typing import Protocol
 import numpy as np
 
 from sleepradiopi.audio import pcm
+from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.tts.worker import TtsWorker
 
 from .library import scan_jingles, scan_music
@@ -368,6 +369,8 @@ class Station:
     def _plan_gap(self, prev: BroadcastTrack, nxt: BroadcastTrack | None) -> list[Step]:
         """onBroadcastTrackStarted: what fills the gap after [prev]."""
         kind = self._show_clock.on_track_started(datetime.now().time())
+        if kind == LinkKind.TIME_CHECK and not clock_trusted():
+            kind = LinkKind.LINK   # offline, the clock may be hours out: say no times
         jingle_due = self._jingle_due()
         b, voice = self.builder, self._has_voice
         steps: list[Step] = []
@@ -449,7 +452,8 @@ class Station:
     # --- news --------------------------------------------------------------------------
 
     def _maybe_prepare_news(self) -> None:
-        if not (self.config.news_enabled and self.tts is not None):
+        # News is scheduled by the clock (and needs the internet anyway).
+        if not (self.config.news_enabled and self.tts is not None and clock_trusted()):
             return
         due = self.news_schedule.prep_at(datetime.now())
         if due is None or due.key == self._news_prep_key:
@@ -487,7 +491,7 @@ class Station:
         if not self.tracks:
             return
         first = self._take_next()
-        greeting = self.builder.welcome_greeting()
+        greeting = self.builder.welcome_greeting(time_known=clock_trusted())
         steps: list[Step] = []
         startup = [j for j in self.jingles if 0 < j.duration_s < STARTUP_JINGLE_MAX_S]
         if self._has_voice:

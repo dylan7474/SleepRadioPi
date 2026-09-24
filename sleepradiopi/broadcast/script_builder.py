@@ -81,7 +81,9 @@ class DjScriptBuilder:
             return f"{self.welcome_greeting(now)} {self.welcome_first_track(first)}"
         return f"{self.welcome_greeting(now)} {self._pick(WELCOME_TAILS)}"
 
-    def welcome_greeting(self, now: Time | None = None) -> str:
+    def welcome_greeting(self, now: Time | None = None, time_known: bool = True) -> str:
+        if not time_known:   # offline with no clock: don't guess the time of day
+            return "Hello, and welcome to Sleep Radio."
         hour = (now or datetime.now().time()).hour
         greeting = ("Good morning" if 5 <= hour <= 11 else
                     "Good afternoon" if 12 <= hour <= 17 else
