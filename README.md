@@ -103,8 +103,8 @@ There are two ways:
 - **The appliance image** (for the finished radio): a separate,
   Buildroot-based image that boots from a read-only root, keeps settings on
   a small data partition and the music on a read-only one, starts the
-  station at power-up, and updates over Wi-Fi into a spare root slot. It's
-  built from a separate repo.
+  station at power-up, and updates over Wi-Fi into a spare root slot:
+  [SleepRadioPi-OS](https://github.com/dylan7474/SleepRadioPi-OS).
 - **Raspberry Pi OS** (development): see [`docs/PI_SETUP.md`](docs/PI_SETUP.md).
 
 ```bash
