@@ -22,6 +22,8 @@ from pathlib import Path
 
 import numpy as np
 
+from sleepradiopi.config.atomic import write_atomic
+
 log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 44_100
@@ -182,10 +184,7 @@ class ScanCache:
         result = analyse(p)
         with self._lock:
             self._data[self._key(p)] = asdict(result)
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self._data))
-            tmp.replace(self.path)
+            write_atomic(self.path, json.dumps(self._data))
         return result
 
 

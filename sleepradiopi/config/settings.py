@@ -14,6 +14,8 @@ import json
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+from sleepradiopi.config.atomic import write_atomic
+
 DEFAULT_PATH = Path.home() / ".config" / "sleepradiopi" / "config.json"
 
 
@@ -51,5 +53,4 @@ def load(path: Path) -> Settings:
 
 
 def save(path: Path, settings: Settings) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(settings), indent=2))
+    write_atomic(path, json.dumps(asdict(settings), indent=2))
