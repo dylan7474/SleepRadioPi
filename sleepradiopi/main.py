@@ -53,7 +53,7 @@ def main() -> None:
     stream = Mp3Output()
     speaker = control = None
     if settings.speaker_enabled:
-        speaker = SpeakerOutput(settings.speaker_device)
+        speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono)
         station = Station(cfg, tts, TeeOutput(speaker, stream))
         control = SpeakerControl(
             speaker, station.listener_joined, station.listener_left,

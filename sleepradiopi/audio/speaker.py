@@ -45,13 +45,14 @@ class SpeakerOutput:
     """An Output (start/write/stop) that plays through aplay."""
 
     def __init__(self, device: str = "default", volume: int = 30,
-                 command: list[str] | None = None) -> None:
+                 command: list[str] | None = None, mono: bool = False) -> None:
         self.command = command or [
             "aplay", "-q", "-D", device, "-t", "raw", "-f", "S16_LE",
             "-r", str(pcm.SAMPLE_RATE), "-c", str(pcm.CHANNELS),
             f"--buffer-time={ALSA_BUFFER_US}",
         ]
         self.volume = volume
+        self.mono = mono                 # both speakers play (L + R) / 2
         self.enabled = True
         self._running = False            # between the show's start() and stop()
         self._proc: subprocess.Popen | None = None
@@ -95,7 +96,10 @@ class SpeakerOutput:
             if proc is None:
                 return
             part = block[i:i + SLICE_FRAMES]
-            if g != 1.0:
+            if self.mono:
+                mid = part.astype(np.float32).mean(axis=1, keepdims=True) * g
+                part = np.repeat(mid, part.shape[1], axis=1).astype(np.int16)
+            elif g != 1.0:
                 part = (part.astype(np.float32) * g).astype(np.int16)
             try:
                 proc.stdin.write(part.tobytes())

@@ -50,6 +50,21 @@ def test_speaker_plays_scaled_audio_and_stops_when_paused(tmp_path: Path) -> Non
     assert (played[:3000] == 10000).all() and (played[3000:] == 0).all()
 
 
+def test_speaker_mono_mixes_left_and_right(tmp_path: Path) -> None:
+    out = tmp_path / "played.raw"
+    spk = SpeakerOutput(command=["sh", "-c", f"cat >> {out}"], mono=True)
+    block = np.column_stack([np.full(2000, 8000), np.full(2000, -2000)]).astype(np.int16)
+    spk.volume = 100
+    spk.start()
+    spk.write(block)
+    spk.volume = 88                   # -6 dB: about half
+    spk.write(block)
+    spk.stop()
+    played = np.frombuffer(out.read_bytes(), dtype=np.int16).reshape(-1, 2)
+    assert (played[:2000] == 3000).all()
+    assert (abs(played[2000:].astype(int) - 1503) <= 1).all()
+
+
 def test_control_joins_once_and_remembers_volume(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(speaker_mod, "SAVE_AFTER_S", 0.05)
     spk, _ = _speaker(tmp_path)

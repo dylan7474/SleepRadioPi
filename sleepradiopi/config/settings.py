@@ -46,6 +46,7 @@ class Settings:
     speaker_enabled: bool = False
     speaker_device: str = "default"   # ALSA device for aplay
     speaker_volume: int = 30          # 0-100 on first start; after that the knob's last setting
+    speaker_mono: bool = False        # mix left and right so both speakers play the same
     knob_step: int = 2                # volume change per click of the knob
     gpio_pin_mapping: dict = field(default_factory=dict)
     lcd_panel_type: str | None = None
