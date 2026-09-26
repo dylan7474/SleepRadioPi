@@ -13,8 +13,9 @@ can be helped. The two things that depend on *when* they're heard are made
 just in time instead:
 
   * the time check is worded PREFETCH_S before the track ends, from the
-    real end time (the stream is realtime with no skip or pause, so that
-    projection is exact -- the fix the Android app needed JIT wording for);
+    real end time (the stream is realtime with no pause, so that projection
+    is exact -- the fix the Android app needed JIT wording for). A skip ends
+    the track early, so it words the gap again from the real time then;
   * a news bulletin is fetched and synthesised up to 15 minutes ahead, but
     only read if its :00/:30 window is open when the gap actually comes,
     with its time line ("It's just gone ten o'clock") worded at prefetch.
@@ -72,6 +73,11 @@ class Speech:
 @dataclass
 class ClockStep:
     speech: Speech | None = None
+
+    def discard(self) -> None:
+        if self.speech is not None:
+            self.speech.future.cancel()  # a no-op if the synth has already started
+            self.speech = None
 
 
 @dataclass
@@ -166,6 +172,7 @@ class Station:
         self._news_ready: NewsItem | None = None
         self._opening: tuple[str, list[Step], BroadcastTrack] | None = None
         self._plan: list[Step] = []
+        self._skip_for: OnAir | None = None
 
         self.on_air: OnAir | None = None
         self.next_track: BroadcastTrack | None = None
@@ -205,6 +212,19 @@ class Station:
     @property
     def is_on_air(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def skip(self) -> bool:
+        """Cut short whatever is on air (a track, jingle, DJ line or bulletin) and
+        go straight on to what comes after it. False if there's nothing to skip."""
+        on_air = self.on_air
+        if not self.is_on_air or on_air is None:
+            return False
+        self._skip_for = on_air
+        log.info("skip: %s %s", on_air.kind, on_air.title[:70])
+        return True
+
+    def _skipped(self, on_air: OnAir) -> bool:
+        return self._skip_for is on_air
 
     def _run_show(self) -> None:
         self.shows_started += 1
@@ -274,19 +294,24 @@ class Station:
     def _has_voice(self) -> bool:
         return self.tts is not None and self.dj_voice is not None
 
-    def _speak(self, speech: Speech, kind: str = "dj") -> None:
+    def _speak(self, speech: Speech, kind: str = "dj") -> bool:
+        """Say a line. False only if it was skipped (or the show stopped)."""
         audio = self._await(speech.future)
         if audio is None:
             log.warning("dropped line (not ready): %s", speech.text)
-            return
-        self.on_air = OnAir(kind, speech.text, duration_s=len(audio) / pcm.SAMPLE_RATE)
+            return True
+        on_air = self.on_air = OnAir(kind, speech.text, duration_s=len(audio) / pcm.SAMPLE_RATE)
         self.history.appendleft({"kind": kind, "text": speech.text, "at": time.time()})
         self._write(pcm.silence(SPEECH_PAD_S))
         for block in pcm.blocks(audio):
             if self._stop.is_set():
-                return
+                return False
+            if self._skipped(on_air):
+                self._write(pcm.silence(SPEECH_PAD_S))
+                return False
             self._write(block)
         self._write(pcm.silence(SPEECH_PAD_S))
+        return True
 
     # --- tracks ----------------------------------------------------------------------
 
@@ -311,6 +336,9 @@ class Station:
         return t
 
     def _play_file(self, path: Path, on_air: OnAir, near_end=None) -> None:
+        """Play a file to its end (or until skipped). near_end(end_at, again) is called
+        once PREFETCH_S before the end -- and again, with again=True, if a skip then
+        makes that projected end wrong."""
         scan = self._await(self._scan(path), 60) or pcm.NO_SCAN
         if path not in self._jingle_paths:  # jingles recur; tracks' futures can go
             self._scan_futures.pop(path, None)
@@ -323,13 +351,17 @@ class Station:
         for block in pcm.decode(path, scan.start_ms, scan.end_ms):
             if self._stop.is_set():
                 return
+            if self._skipped(on_air):
+                if fired and near_end is not None:
+                    near_end(datetime.now(), True)
+                break
             self._write(pcm.apply_gain(block, scan.gain))
             played += len(block)
             if not fired and playable_s and playable_s - played / pcm.SAMPLE_RATE <= PREFETCH_S:
                 fired = True
-                near_end(datetime.now() + timedelta(seconds=playable_s - played / pcm.SAMPLE_RATE))
+                near_end(datetime.now() + timedelta(seconds=playable_s - played / pcm.SAMPLE_RATE), False)
         if not fired:
-            near_end(datetime.now())
+            near_end(datetime.now(), False)
 
     def _play_track(self, track: BroadcastTrack) -> None:
         self._refill()
@@ -341,7 +373,7 @@ class Station:
         log.info("now: %s by %s | after it: %s", track.title, track.artist, self.gap_plan or "straight on")
         self.history.appendleft({"kind": "track", "text": f"{track.title} — {track.artist}", "at": time.time()})
         self._play_file(track.path, OnAir("track", track.title, track.artist, track.album),
-                        near_end=lambda end_at: self._prefetch_gap(plan, end_at))
+                        near_end=lambda end_at, again: self._prefetch_gap(plan, end_at, again))
 
     # --- the gap between tracks ---------------------------------------------------------
 
@@ -395,10 +427,18 @@ class Station:
                 steps.append(Step("say", self._say(text)))
         return steps
 
-    def _prefetch_gap(self, plan: list[Step], end_at: datetime) -> None:
+    def _prefetch_gap(self, plan: list[Step], end_at: datetime, again: bool = False) -> None:
         """PREFETCH_S before the track ends: word anything time-dependent from the real
-        end time, so it's synthesised by the time the gap arrives."""
+        end time, so it's synthesised by the time the gap arrives. [again]: the track was
+        skipped after that, so throw away what was worded and word it from now."""
         news = self._news_ready
+        if again:
+            for step in plan:
+                if step.kind == "clock":
+                    step.clock.discard()
+            if news is not None and news.time_line is not None:
+                news.time_line.future.cancel()
+                news.time_line = None
         if news and news.time_line is None:
             due = self.news_schedule.due_at(end_at)
             if due and due.key == news.due.key:
@@ -479,8 +519,8 @@ class Station:
         if news.time_line is None:
             news.time_line = self._say(bulletin_time_line(news.due.mark, datetime.now()),
                                        self.news_voice, self.config.news_speed)
-        self._speak(news.time_line, "news")
-        self._speak(news.body, "news")
+        if self._speak(news.time_line, "news"):  # a skip in the time line skips the whole bulletin
+            self._speak(news.body, "news")
         self.news_repo.mark_read(news.headlines)
 
     # --- opening ----------------------------------------------------------------------
@@ -531,6 +571,7 @@ class Station:
             },
             "next": None if nxt is None else {"title": nxt.title, "artist": nxt.artist},
             "gap_plan": self.gap_plan,
+            "can_skip": self.is_on_air and on_air is not None,
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
             "library": {"tracks": len(self.tracks), "jingles": len(self.jingles)},

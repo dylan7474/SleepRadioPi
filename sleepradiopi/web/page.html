@@ -45,6 +45,9 @@
   li time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
   li .k { color: var(--accent); flex: none; width: 1.2rem; text-align: center; }
   .muted { color: var(--muted); }
+  .now-foot { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: .8rem; }
+  .now-foot #next { margin: 0; }
+  #skip { flex: none; padding: .35rem .8rem; font-size: .9rem; }
   #power .row { margin-top: 0; justify-content: space-between; }
   #off { border-color: var(--live); color: var(--live); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
@@ -63,7 +66,10 @@
     <p id="title" class="title">Press play to tune in</p>
     <p id="artist" class="artist"></p>
     <div class="bar"><div id="progress"></div></div>
-    <p id="next" class="muted" style="margin:.8rem 0 0"></p>
+    <div class="now-foot">
+      <p id="next" class="muted"></p>
+      <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
+    </div>
   </section>
 
   <button id="tune" type="button">▶ Tune in</button>
@@ -207,6 +213,7 @@ async function poll() {
       $("artist").textContent = "";
       $("progress").style.width = "0";
     }
+    $("skip").hidden = !s.can_skip;
     $("next").textContent = s.on_air && s.next ? `Next: ${s.next.title}${s.next.artist ? " — " + s.next.artist : ""}` : "";
     const hist = $("history");
     hist.replaceChildren(...(s.history.length ? s.history.map(h => {
@@ -222,6 +229,14 @@ async function poll() {
 poll();
 setInterval(poll, 3000);
 
+// Skip applies to the station itself, so the speaker and every listener hear
+// it; a browser hears it a few seconds later (its stream buffer).
+$("skip").onclick = async () => {
+  $("skip").disabled = true;
+  try { await fetch("/api/skip", { method: "POST" }); } catch {}
+  setTimeout(() => { $("skip").disabled = false; poll(); }, 1500);
+};
+
 $("off").onclick = async () => {
   if (!confirm("Shut down the radio?\n\nTo turn it back on, unplug it and plug it in again.")) return;
   try {
@@ -235,6 +250,7 @@ $("off").onclick = async () => {
   tuneOut();
   $("off").disabled = true;
   $("tune").disabled = true;
+  $("skip").hidden = true;
   $("progress").style.width = "0";
   $("badge").textContent = "Off"; $("badge").classList.remove("live");
   $("kind").textContent = "Shutting down";

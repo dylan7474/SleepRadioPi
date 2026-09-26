@@ -62,6 +62,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None):
             path = urlparse(self.path).path
             if path == "/api/power":
                 self._power()
+            elif path == "/api/skip":
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))  # no body needed
+                self._send(json.dumps({"skipped": station.skip()}).encode(), "application/json")
             elif path == "/api/speaker" and speaker is not None:
                 self._speaker()
             else:
