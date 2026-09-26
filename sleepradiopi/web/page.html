@@ -69,8 +69,10 @@
   <section class="card">
     <div class="row">
       <label for="vol">Volume</label>
-      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8">
+      <input id="vol" type="range" min="0" max="100" step="1" value="80">
+      <output id="volNum" for="vol" class="muted">80</output>
     </div>
+    <p id="volNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Also sets the radio's own speaker.</p>
     <div class="row sleep" role="group" aria-label="Sleep timer">
       <label>Sleep</label>
       <button type="button" data-min="0" aria-pressed="true">Off</button>
@@ -95,11 +97,21 @@
 <script>
 const $ = id => document.getElementById(id);
 const audio = $("audio");
-let wanted = false, sleepEnd = 0, baseVol = 0.8;
+let wanted = false, sleepEnd = 0;
 
-try { baseVol = parseFloat(localStorage.getItem("vol") ?? "0.8"); } catch {}
-$("vol").value = baseVol;
-audio.volume = baseVol;
+// Volume 0-100 in 0.5 dB steps, the same scale as the radio's speaker (and
+// its knob), so this page and the speaker sound alike at the same number.
+// When the station has a speaker, the slider sets it too.
+const gain = v => v <= 0 ? 0 : Math.pow(10, (Math.min(v, 100) - 100) * 0.5 / 20);
+let vol = 80, baseVol = gain(vol), hasSpeaker = false, lastInput = 0, sendTimer = null;
+try { vol = Math.max(0, Math.min(100, parseInt(localStorage.getItem("vol100") ?? "80", 10))) || 0; } catch {}
+function showVol() {
+  baseVol = gain(vol);
+  $("vol").value = vol;
+  $("volNum").textContent = vol;
+  if (!sleepEnd) audio.volume = baseVol;
+}
+showVol();
 
 function tuneIn() {
   wanted = true;
@@ -123,10 +135,19 @@ $("tune").onclick = () => wanted ? tuneOut() : tuneIn().catch(() => {});
 }));
 
 $("vol").oninput = e => {
-  baseVol = parseFloat(e.target.value);
-  try { localStorage.setItem("vol", baseVol); } catch {}
-  if (!sleepEnd) audio.volume = baseVol;
+  vol = parseInt(e.target.value, 10);
+  lastInput = Date.now();
+  try { localStorage.setItem("vol100", vol); } catch {}
+  showVol();
+  if (hasSpeaker && !sendTimer) sendTimer = setTimeout(sendSpeakerVol, 150);  // at most ~7 a second
 };
+async function sendSpeakerVol() {
+  try {
+    await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ volume: vol }) });
+  } catch {}
+  sendTimer = null;
+}
 
 document.querySelectorAll(".sleep button").forEach(b => b.onclick = () => {
   const min = parseInt(b.dataset.min, 10);
@@ -153,6 +174,13 @@ const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", m
 async function poll() {
   try {
     const s = await (await fetch("/api/status", { cache: "no-store" })).json();
+    // Follow the speaker (the knob, or another page), except mid-drag.
+    hasSpeaker = !!s.speaker;
+    $("volNote").hidden = !hasSpeaker;
+    if (hasSpeaker && !sendTimer && Date.now() - lastInput > 2000 && s.speaker.volume !== vol) {
+      vol = s.speaker.volume;
+      showVol();
+    }
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
     badge.classList.toggle("live", s.on_air);
