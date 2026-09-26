@@ -45,6 +45,8 @@
   li time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
   li .k { color: var(--accent); flex: none; width: 1.2rem; text-align: center; }
   .muted { color: var(--muted); }
+  #power .row { margin-top: 0; justify-content: space-between; }
+  #off { border-color: var(--live); color: var(--live); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
   footer a { color: var(--muted); }
 </style>
@@ -89,6 +91,13 @@
     <ul id="history"><li class="muted">Nothing yet.</li></ul>
   </section>
 
+  <section id="power" class="card" hidden>
+    <div class="row">
+      <span id="powerNote" class="muted">Turn the radio off before unplugging it.</span>
+      <button id="off" type="button">Shut down</button>
+    </div>
+  </section>
+
   <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
     Sleep timer fades out over the last minute.</footer>
 </main>
@@ -97,7 +106,7 @@
 <script>
 const $ = id => document.getElementById(id);
 const audio = $("audio");
-let wanted = false, sleepEnd = 0;
+let wanted = false, sleepEnd = 0, shuttingDown = false;
 
 // Volume 0-100 in 0.5 dB steps, the same scale as the radio's speaker (and
 // its knob), so this page and the speaker sound alike at the same number.
@@ -172,10 +181,12 @@ const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰" };
 const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 async function poll() {
+  if (shuttingDown) return;
   try {
     const s = await (await fetch("/api/status", { cache: "no-store" })).json();
     // Follow the speaker (the knob, or another page), except mid-drag.
     hasSpeaker = !!s.speaker;
+    $("power").hidden = !s.can_power_off;
     $("volNote").hidden = !hasSpeaker;
     if (hasSpeaker && !sendTimer && Date.now() - lastInput > 2000 && s.speaker.volume !== vol) {
       vol = s.speaker.volume;
@@ -210,6 +221,28 @@ async function poll() {
 }
 poll();
 setInterval(poll, 3000);
+
+$("off").onclick = async () => {
+  if (!confirm("Shut down the radio?\n\nTo turn it back on, unplug it and plug it in again.")) return;
+  try {
+    const r = await fetch("/api/power", { method: "POST" });
+    if (!r.ok) throw new Error(r.status);
+  } catch {
+    $("powerNote").textContent = "Couldn't shut down. Try again?";
+    return;
+  }
+  shuttingDown = true;
+  tuneOut();
+  $("off").disabled = true;
+  $("tune").disabled = true;
+  $("progress").style.width = "0";
+  $("badge").textContent = "Off"; $("badge").classList.remove("live");
+  $("kind").textContent = "Shutting down";
+  $("title").textContent = "Goodnight";
+  $("artist").textContent = "";
+  $("next").textContent = "";
+  $("powerNote").textContent = "Safe to unplug in about 20 seconds.";
+};
 
 // Start playing on open where the browser allows it; otherwise the button does it.
 tuneIn().catch(() => {});

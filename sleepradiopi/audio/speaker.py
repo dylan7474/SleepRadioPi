@@ -177,6 +177,14 @@ class SpeakerControl:
         if self.state_file is not None:
             write_atomic(self.state_file, json.dumps({"volume": self.speaker.volume}))
 
+    def save_now(self) -> None:
+        """Save the volume straight away, e.g. before a shutdown."""
+        with self._lock:
+            if self._save_timer is not None:
+                self._save_timer.cancel()
+                self._save_timer = None
+        self._save()
+
     @property
     def volume(self) -> int:
         return self.speaker.volume

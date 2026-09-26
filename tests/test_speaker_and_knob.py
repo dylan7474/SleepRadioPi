@@ -83,6 +83,15 @@ def test_control_joins_once_and_remembers_volume(tmp_path: Path, monkeypatch) ->
     assert again.volume == 93
 
 
+def test_save_now_writes_the_volume_at_once(tmp_path: Path) -> None:
+    spk, _ = _speaker(tmp_path)
+    state = tmp_path / "state" / "speaker.json"
+    ctl = SpeakerControl(spk, lambda: None, lambda: None, state_file=state)
+    ctl.set_volume(61)            # normally saved a few seconds later
+    ctl.save_now()                # e.g. just before a shutdown
+    assert '"volume": 61' in state.read_text()
+
+
 def test_handle_events() -> None:
     turns, presses = [], []
     data = _event(EV_REL, 1) + _event(EV_REL, -1) + _event(EV_KEY, 1, 164) + _event(EV_KEY, 0, 164)

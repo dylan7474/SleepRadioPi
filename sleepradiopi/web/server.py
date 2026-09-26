@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from sleepradiopi.broadcast.station import Station
+from sleepradiopi.config.power import can_power_off, request_power_off
 
 from .stream import Mp3Output
 
@@ -50,6 +51,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None):
                 status = station.status()
                 if speaker is not None:
                     status["speaker"] = speaker.status()
+                status["can_power_off"] = can_power_off()
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/stream":
                 self._stream()
@@ -57,11 +59,31 @@ def make_handler(station: Station, output: Mp3Output, speaker=None):
                 self.send_error(404)
 
         def do_POST(self) -> None:
-            """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
-            or {"pause": true | false | "toggle"}. Replies with the speaker's status."""
-            if urlparse(self.path).path != "/api/speaker" or speaker is None:
+            path = urlparse(self.path).path
+            if path == "/api/power":
+                self._power()
+            elif path == "/api/speaker" and speaker is not None:
+                self._speaker()
+            else:
+                self.send_error(404)
+
+        def _power(self) -> None:
+            """/api/power: shut the radio down. Saves the volume and silences
+            the speaker first, so it goes quiet at once."""
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))  # no body needed
+            if not can_power_off():
                 self.send_error(404)
                 return
+            log.info("shutdown requested from %s", self.address_string())
+            if speaker is not None:
+                speaker.save_now()
+                speaker.pause()
+            ok = request_power_off()
+            self._send(json.dumps({"shutting_down": ok}).encode(), "application/json")
+
+        def _speaker(self) -> None:
+            """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
+            or {"pause": true | false | "toggle"}. Replies with the speaker's status."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 if "volume" in body:

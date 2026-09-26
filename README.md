@@ -147,6 +147,11 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
 - `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}` or
   `{"pause": true | false | "toggle"}` — the knob's controls, for testing.
+- `POST /api/power` — shut the radio down (the page's **Shut down** button,
+  which asks first). The station isn't root, so it only creates the file
+  named by `SLEEPRADIOPI_POWER_REQUEST`; something running as root must
+  watch for it and power off (the appliance image does). Without the
+  variable there's no button, and the API answers 404.
 
 No login: it's meant for a home network. Once the speaker is the main
 output, the plan is a small status/settings page and the browser stream off
