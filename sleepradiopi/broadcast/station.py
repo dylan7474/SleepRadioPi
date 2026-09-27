@@ -43,6 +43,7 @@ from sleepradiopi.tts.worker import TtsWorker
 from .library import scan_jingles, scan_music
 from .models import BroadcastConfig, BroadcastTrack, Chattiness, JingleClip, LinkKind
 from .news import DueNews, NewsRepository, NewsSchedule, QuietHours, build_bulletin_body, bulletin_time_line
+from .birthdays import BirthdayWishes, wish_text
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
 from .selector import BroadcastSelector, HookPool, parse_hooks
 
@@ -152,6 +153,13 @@ class Station:
             QuietHours.of_minutes(self.config.news_quiet_start_min, self.config.news_quiet_end_min)
             if self.config.news_quiet_hours else None)
         self.news_repo = NewsRepository()
+        quiet = (QuietHours.of_minutes(self.config.news_quiet_start_min, self.config.news_quiet_end_min)
+                 if self.config.news_quiet_hours else None)
+        try:
+            self.birthdays = BirthdayWishes(cfg.get("birthdays") or [], quiet)
+        except ValueError as e:              # a hand-edited config: don't stop the station
+            log.warning("birthdays ignored: %s", e)
+            self.birthdays = BirthdayWishes([], quiet)
 
         self.tracks = scan_music(self.music_dir, cfg.get("tag_cache"))
         self.selector = BroadcastSelector(self.tracks)
@@ -440,7 +448,19 @@ class Station:
             text = b.build(kind, prev, nxt, announce_every_track=self.config.announce_every_track)
             if text:
                 steps.append(Step("say", self._say(text)))
+        if voice:
+            now = datetime.now()
+            people = self.birthdays.due(now, clock_trusted())
+            if people:                        # first thing in the gap
+                steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
+                self.birthdays.wished(now)
+                log.info("birthday wish planned for %s", ", ".join(p["name"] for p in people))
         return steps
+
+    def set_birthdays(self, entries: list[dict]) -> None:
+        """Replace the birthday list (validated; ValueError if it's wrong)."""
+        self.birthdays.set(entries)
+        log.info("birthdays: %d on the list", len(self.birthdays.entries))
 
     def _prefetch_gap(self, plan: list[Step], end_at: datetime, again: bool = False) -> None:
         """PREFETCH_S before the track ends: word anything time-dependent from the real

@@ -172,6 +172,14 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   still plays first. Saved as `broadcast_artist` (and in the settings
   file); if the library has nothing by that artist it plays everything.
   `GET /api/artists`, `POST /api/station {"artist": "The Beatles" | null}`.
+- **Birthdays** card: starts empty; add a name, day and month (and
+  optionally the year born). On the day, once the clock is trusted and
+  outside the news quiet hours, the DJ wishes them a happy birthday first
+  thing in a gap between songs -- at most every 90 minutes, up to 4 times
+  ("happy forty-first birthday to Sarah" when the year is known; 29
+  February is celebrated on the 28th in other years). *Hear it* plays a
+  wish on the speaker now. Kept as `birthdays` in the config and in the
+  settings file. `GET/POST /api/birthdays`, `POST /api/birthdays/hear`.
 - **Knob switch** card (and the real knob): a tap pauses/plays; **holding it
   3 s** makes the radio beep and then say its network address digit by
   digit, twice, and its `.local` name -- or that it isn't connected. For

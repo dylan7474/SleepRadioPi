@@ -12,11 +12,15 @@ import os
 import queue
 import threading
 import time
+from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from sleepradiopi.broadcast import birthdays
 from sleepradiopi.broadcast.station import Station
+from sleepradiopi.config.clock import clock_trusted
+from sleepradiopi.io.announce import Clip
 from sleepradiopi.config import backup
 from sleepradiopi.config.settings import save_setting
 from sleepradiopi.config.power import can_power_off, request_power_off
@@ -78,6 +82,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._save_settings()
+            elif path == "/api/birthdays":
+                self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
             elif path == "/api/artists":
                 self._send(json.dumps({"artist": station.artist, "station_name": station.builder.station,
                                        "artists": station.artists()}).encode(), "application/json")
@@ -101,6 +107,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._knob()
             elif path == "/api/station":
                 self._station()
+            elif path == "/api/birthdays":
+                self._set_birthdays()
+            elif path == "/api/birthdays/hear":
+                self._hear_birthday()
             else:
                 self.send_error(404)
 
@@ -156,6 +166,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             changed = backup.apply(config_file, settings)     # before the live ones save theirs
             if "broadcast_artist" in changed:
                 station.set_artist(settings["broadcast_artist"])
+            if "birthdays" in changed:
+                station.set_birthdays(settings["birthdays"])
             if speaker is not None:
                 if "speaker_mono" in settings:
                     speaker.set_mono(settings["speaker_mono"])
@@ -177,6 +189,59 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                    "restarting": restarting}).encode(), "application/json")
             if restarting:
                 _restart_soon(speaker)
+
+        def _birthdays_state(self) -> dict:
+            trusted = clock_trusted()
+            return {"birthdays": station.birthdays.entries,
+                    "today": station.birthdays.today(datetime.now()) if trusted else [],
+                    "clock_trusted": trusted,
+                    "can_hear": speaker is not None and station._has_voice}
+
+        def _body(self):
+            return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+
+        def _error(self, message: str) -> None:
+            body = json.dumps({"error": message}).encode()
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _set_birthdays(self) -> None:
+            """POST /api/birthdays {"birthdays": [...]}: replace the list. Saved."""
+            try:
+                entries = birthdays.validate(self._body()["birthdays"])
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"birthdays\": [...]}")
+                return
+            station.set_birthdays(entries)
+            if config_file is not None:
+                save_setting(config_file, "birthdays", entries)
+            self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
+
+        def _hear_birthday(self) -> None:
+            """POST /api/birthdays/hear {"name", "day", "month", "year"?}: say
+            that person's wish on the speaker now, as if it were their day."""
+            try:
+                person = birthdays.validate([self._body()])[0]
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send a name, day and month")
+                return
+            if speaker is None or not station._has_voice:
+                self._error("this radio has no speaker or no voice")
+                return
+            age = date.today().year - person["year"] if person.get("year") else None
+            text = birthdays.wish_text([{"name": person["name"], "age": age if age and 1 <= age <= 120 else None}],
+                                       station.builder.station)
+
+            def run():
+                try:
+                    speaker.play_clip(Clip(station.render_speech(text), "birthday", "Birthday wish"))
+                except Exception:
+                    log.exception("birthday preview failed")
+            threading.Thread(target=run, name="birthday-preview", daemon=True).start()
+            self._send(json.dumps({"ok": True, "text": text}).encode(), "application/json")
 
         def _station(self) -> None:
             """/api/station {"artist": "The Beatles" | null}: artist radio (only

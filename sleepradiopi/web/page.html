@@ -64,6 +64,16 @@
   #artistRadio { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
             border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .6rem; }
   #artistRadio:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #bdList li { align-items: center; }
+  #bdList .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #bdList button { padding: .25rem .6rem; font-size: .85rem; }
+  #bdForm { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+  #bdForm input, #bdForm select { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
+  #bdName { flex: 1 1 9rem; }
+  #bdYear { width: 5.5rem; }
+  #bdToday { margin: 0 0 .6rem; color: var(--accent); }
+  #bdNote.bad { color: var(--live); }
   #knobBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; font-size: 1rem;
              touch-action: none; user-select: none; -webkit-user-select: none; }
   #knobBtn span { position: relative; }
@@ -106,6 +116,22 @@
       </select>
     </div>
     <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only, e.g. Beatles Radio.</p>
+  </section>
+
+  <section id="bd" class="card">
+    <h2>Birthdays</h2>
+    <p id="bdToday" hidden></p>
+    <ul id="bdList"><li class="muted">No birthdays yet.</li></ul>
+    <form id="bdForm" autocomplete="off">
+      <input id="bdName" placeholder="Name" maxlength="60" aria-label="Name" required>
+      <select id="bdDay" aria-label="Day"></select>
+      <select id="bdMonth" aria-label="Month"></select>
+      <input id="bdYear" type="number" inputmode="numeric" min="1900" placeholder="Year" aria-label="Year born (optional)">
+      <button type="submit">Add</button>
+    </form>
+    <p id="bdNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">On their birthday the DJ wishes them a
+      happy one between songs, a few times through the day (not in the night-time quiet hours). The year is
+      optional: with it the DJ says which birthday.</p>
   </section>
 
   <section class="card">
@@ -376,6 +402,69 @@ $("artistRadio").onchange = async e => {
 };
 loadArtists();
 
+// Birthdays: kept on the radio (and in the saved settings file).
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+                "September", "October", "November", "December"];
+let bdList = [], bdCanHear = false;
+for (let d = 1; d <= 31; d++) $("bdDay").append(new Option(d, d));
+MONTHS.forEach((m, i) => $("bdMonth").append(new Option(m, i + 1)));
+function bdNote(text, bad) { $("bdNote").textContent = text; $("bdNote").classList.toggle("bad", !!bad); }
+function showBirthdays(state) {
+  bdList = state.birthdays; bdCanHear = state.can_hear;
+  const list = $("bdList");
+  list.replaceChildren(...(bdList.length ? bdList.map((b, i) => {
+    const li = document.createElement("li");
+    const who = document.createElement("span"); who.className = "who";
+    who.textContent = `${b.name} · ${b.day} ${MONTHS[b.month - 1]}${b.year ? " " + b.year : ""}`;
+    li.append(who);
+    if (bdCanHear) {
+      const hear = document.createElement("button"); hear.type = "button"; hear.textContent = "Hear it";
+      hear.title = "The DJ says this wish on the radio now";
+      hear.onclick = () => hearBirthday(b);
+      li.append(hear);
+    }
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Remove";
+    del.onclick = () => saveBirthdays(bdList.filter((_, j) => j !== i), `Removed ${b.name}.`);
+    li.append(del);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No birthdays yet." })]));
+  const today = state.today || [];
+  $("bdToday").hidden = !today.length;
+  $("bdToday").textContent = today.length ? "🎂 Today: " + today.map(t => t.name + (t.age ? ` (${t.age})` : "")).join(", ") : "";
+  if (!state.clock_trusted) bdNote("The radio's clock isn't set yet (no internet), so no birthday wishes until it is.");
+}
+async function loadBirthdays() {
+  try { showBirthdays(await (await fetch("/api/birthdays", { cache: "no-store" })).json()); } catch {}
+}
+async function saveBirthdays(list, done) {
+  try {
+    const r = await fetch("/api/birthdays", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ birthdays: list }) });
+    const reply = await r.json();
+    if (!r.ok) return bdNote("Not saved: " + reply.error + ".", true), false;
+    showBirthdays(reply); bdNote(done);
+    return true;
+  } catch { bdNote("Couldn't reach the radio.", true); return false; }
+}
+async function hearBirthday(b) {
+  bdNote(`Making ${b.name}'s wish; it plays on the radio in a few seconds…`);
+  try {
+    const r = await fetch("/api/birthdays/hear", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify(b) });
+    const reply = await r.json();
+    bdNote(r.ok ? `On the radio: “${reply.text}”` : "Couldn't: " + reply.error + ".", !r.ok);
+  } catch { bdNote("Couldn't reach the radio.", true); }
+}
+$("bdForm").onsubmit = async e => {
+  e.preventDefault();
+  const name = $("bdName").value.trim();
+  if (!name) return;
+  const entry = { name, day: +$("bdDay").value, month: +$("bdMonth").value };
+  if ($("bdYear").value) entry.year = +$("bdYear").value;
+  if (await saveBirthdays([...bdList, entry], `Added ${name}.`)) { $("bdName").value = ""; $("bdYear").value = ""; }
+};
+loadBirthdays();
+
 // The knob's switch: tap = pause/play, hold 3 s = say the address, the
 // same timing as the real one (the fill shows how long to hold).
 let knobTimer = null, knobLong = false;
@@ -556,7 +645,7 @@ $("settingsFile").onchange = async e => {
                : reply.needs_restart ? "Loaded. Some take effect the next time the radio starts."
                : reply.changed.length ? "Loaded." : "Loaded. They were the same as the radio's already.");
     lastInput = eqInput = modeSent = lowcutSent = 0;   // let the page follow the new volume, EQ and mode
-    poll();
+    poll(); loadBirthdays(); loadArtists();
   } catch {
     settingsNote("Couldn't reach the radio. Try again?", true);
   }

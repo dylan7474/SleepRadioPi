@@ -28,6 +28,7 @@ class Settings:
     broadcast_voice: str | None = "stock"      # "stock" or "personal"; None = music and jingles only
     broadcast_artist: str | None = None   # artist radio ("The Beatles" -> "Beatles Radio"); None = everything
     broadcast_chattiness: str = "maximum"
+    birthdays: list = field(default_factory=list)  # [{"name", "day", "month", "year"?}]: the DJ wishes them on the day
     broadcast_jingle_enabled: bool = True
     broadcast_jingle_every: int = 4
     broadcast_announcer_volume: float = 0.4    # x the speech level; 0.4 ~ level with the music
