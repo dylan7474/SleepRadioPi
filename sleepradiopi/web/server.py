@@ -46,7 +46,7 @@ def _restart_soon(speaker) -> None:
 
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
-                 config_file: Path | None = None):
+                 config_file: Path | None = None, announcer=None):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -93,6 +93,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._speaker()
             elif path == "/api/settings" and config_file is not None:
                 self._load_settings()
+            elif path == "/api/knob" and speaker is not None:
+                self._knob()
             else:
                 self.send_error(404)
 
@@ -167,6 +169,26 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                    "restarting": restarting}).encode(), "application/json")
             if restarting:
                 _restart_soon(speaker)
+
+        def _knob(self) -> None:
+            """/api/knob {"press": "short" | "long"}: the knob's switch, from the
+            page (to try it without the hardware). Short = pause/play, long =
+            say the radio's address."""
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                press = body.get("press")
+                if press not in ("short", "long"):
+                    raise ValueError("press must be short or long")
+            except (ValueError, TypeError, AttributeError):
+                self.send_error(400)
+                return
+            if press == "short":
+                speaker.toggle()
+                done = True
+            else:
+                done = announcer.speak() if announcer is not None else False
+            self._send(json.dumps({"press": press, "done": done, **speaker.status()}).encode(),
+                       "application/json")
 
         def _speaker(self) -> None:
             """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
@@ -248,9 +270,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
 
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
-          config_file: Path | None = None) -> None:
+          config_file: Path | None = None, announcer=None) -> None:
     server = ThreadingHTTPServer(("0.0.0.0", port),
-                                 make_handler(station, output, speaker, config_file))
+                                 make_handler(station, output, speaker, config_file, announcer))
     server.daemon_threads = True
     log.info("Sleep Radio on http://0.0.0.0:%d/", port)
     server.serve_forever()

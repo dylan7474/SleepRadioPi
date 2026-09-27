@@ -18,6 +18,7 @@ from sleepradiopi.audio.eq import Equalizer
 from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.settings import DEFAULT_PATH, load, save
+from sleepradiopi.io.announce import Announcer
 from sleepradiopi.io.knob import Knob
 from sleepradiopi.tts.worker import TtsWorker
 from sleepradiopi.web.server import serve
@@ -53,7 +54,7 @@ def main() -> None:
     # One voice only: two don't fit a Pi Zero 2 W's RAM alongside the stream.
     tts = TtsWorker(voices, settings.broadcast_voice) if settings.broadcast_voice else None
     stream = Mp3Output()
-    speaker = control = None
+    speaker = control = announcer = None
     if settings.speaker_enabled:
         speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono,
                                 eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
@@ -63,11 +64,16 @@ def main() -> None:
             speaker, station.listener_joined, station.listener_left,
             state_file=Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json",
             default_volume=settings.speaker_volume, config_file=args.config)
-        Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle).start()
+        # A long press says the radio's address (for finding the web page away from home).
+        announcer = Announcer(station.render_speech if station._has_voice else None, control.play_clip,
+                              voice_ready=lambda: bool(tts and tts.ready))
+        announcer.start()
+        Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
+             on_long_press=announcer.speak).start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
-    serve(station, stream, args.port or settings.http_port, control, args.config)
+    serve(station, stream, args.port or settings.http_port, control, args.config, announcer)
 
 
 if __name__ == "__main__":

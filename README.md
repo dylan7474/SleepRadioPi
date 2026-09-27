@@ -166,6 +166,13 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   check** that switches every 3 s between both speakers the same and the
   right one inverted: if the inverted part sounds fuller, one speaker is
   wired the wrong way round (vocals then vanish in stereo but not in mono).
+- **Knob switch** card (and the real knob): a tap pauses/plays; **holding it
+  3 s** makes the radio beep and then say its network address digit by
+  digit, twice, and its `.local` name -- or that it isn't connected. For
+  finding the web page away from home. The announcement is made in the
+  background once the voice has loaded and remade when the address changes,
+  so a hold answers at once; if the radio was paused it plays the
+  announcement and pauses again. `POST /api/knob {"press": "short" | "long"}`.
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
 - `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
   `{"pause": true | false | "toggle"}` (the knob's controls, for testing),

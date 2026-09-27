@@ -290,6 +290,12 @@ class Station:
 
         return Speech(text, voice, self._tts_pool.submit(job))
 
+    def render_speech(self, text: str) -> np.ndarray:
+        """Say text in the DJ voice, as int16 stereo, now (blocking): for things
+        outside the show, like the spoken address. Needs a voice."""
+        samples, rate = self.tts.synth(self.dj_voice, text, self.config.announcer_speed)
+        return pcm.speech_pcm(samples, rate, self.announcer_volume)
+
     @property
     def _has_voice(self) -> bool:
         return self.tts is not None and self.dj_voice is not None

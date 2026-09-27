@@ -61,6 +61,11 @@
   #settings button { font-size: .9rem; padding: .45rem .9rem; }
   #settingsNote { margin: .75rem 0 0; font-size: .85rem; }
   #test button { font-size: .9rem; padding: .45rem .8rem; }
+  #knobBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; font-size: 1rem;
+             touch-action: none; user-select: none; -webkit-user-select: none; }
+  #knobBtn span { position: relative; }
+  #knobFill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); opacity: .35; }
+  #knobBtn.holding #knobFill { width: 100%; transition: width 3s linear; }
   #testStop { border-color: var(--live); color: var(--live); }
   #testNow { margin: .75rem 0 0; font-variant-numeric: tabular-nums; }
   #testNow b { color: var(--accent); font-size: 1.4rem; }
@@ -138,6 +143,14 @@
     <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
       A boost lowers the overall level a little, so it can't distort. With the bass port
       back panel, set the low cut to 140 Hz.</p>
+  </section>
+
+  <section id="knob" class="card" hidden>
+    <h2>Knob switch</h2>
+    <button id="knobBtn" type="button"><i id="knobFill"></i><span>Tap: pause / play · Hold 3 s: say the address</span></button>
+    <p id="knobNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as pressing the radio's knob.
+      Holding it for 3 seconds makes the radio beep and then read out its network address, or say it isn't
+      connected.</p>
   </section>
 
   <section id="test" class="card" hidden>
@@ -308,6 +321,40 @@ async function sendTest(test) {
 document.querySelectorAll("#test button[data-test]").forEach(b => b.onclick = () => sendTest(b.dataset.test));
 $("testStop").onclick = () => sendTest("stop");
 
+// The knob's switch: tap = pause/play, hold 3 s = say the address, the
+// same timing as the real one (the fill shows how long to hold).
+let knobTimer = null, knobLong = false;
+async function knobPress(press) {
+  try {
+    const r = await (await fetch("/api/knob", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ press }) })).json();
+    $("knobNote").textContent = press === "long"
+      ? (r.done ? "Beep, then the address: listen to the radio." : "It's already saying it.")
+      : (r.playing ? "Playing." : "Paused.");
+    poll();
+  } catch { $("knobNote").textContent = "Couldn't reach the radio."; }
+}
+function knobDown(e) {
+  e.preventDefault();
+  if (knobTimer) return;
+  knobLong = false;
+  $("knobBtn").classList.add("holding");
+  knobTimer = setTimeout(() => { knobLong = true; $("knobBtn").classList.remove("holding"); knobPress("long"); }, 3000);
+}
+function knobUp(cancel) {
+  if (!knobTimer) return;
+  clearTimeout(knobTimer); knobTimer = null;
+  $("knobBtn").classList.remove("holding");
+  if (!knobLong && !cancel) knobPress("short");
+}
+$("knobBtn").addEventListener("pointerdown", knobDown);
+$("knobBtn").addEventListener("pointerup", () => knobUp(false));
+$("knobBtn").addEventListener("pointercancel", () => knobUp(true));
+$("knobBtn").addEventListener("pointerleave", () => knobUp(true));
+$("knobBtn").addEventListener("contextmenu", e => e.preventDefault());   // long touch on phones
+$("knobBtn").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!e.repeat) knobDown(e); } });
+$("knobBtn").addEventListener("keyup", e => { if (e.key === "Enter" || e.key === " ") knobUp(false); });
+
 // Low cut (Hz, 0 = off): keeps the deepest bass out of the small speakers.
 let lowcut = 0, lowcutSent = 0;
 const showLowcut = () => document.querySelectorAll("#lowcut button")
@@ -369,6 +416,7 @@ async function poll() {
     $("volNote").hidden = !hasSpeaker;
     $("mode").hidden = !hasSpeaker;
     $("test").hidden = !hasSpeaker;
+    $("knob").hidden = !hasSpeaker;
     if (hasSpeaker) showTest(s.speaker.test);
     if (hasSpeaker) followSleep(s.speaker);
     $("eq").hidden = !(hasSpeaker && s.speaker.eq);

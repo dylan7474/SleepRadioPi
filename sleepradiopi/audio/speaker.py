@@ -118,7 +118,7 @@ class SpeakerOutput:
                             self.test = None
                     if self.eq is not None:
                         self.eq.reset()      # don't replay the show from before the test
-                    log.info("speaker: test sound finished")
+                    log.info("speaker: %s finished", test.label)
             else:
                 if self.mono:
                     x = np.repeat(x.mean(axis=1, keepdims=True), x.shape[1], axis=1)
@@ -193,6 +193,7 @@ class SpeakerControl:
         self._save_timer: threading.Timer | None = None
         self._sleep_timer: threading.Timer | None = None
         self._sleep_min = 0
+        self._pause_after_clip = False   # a clip started while paused: pause again after it
         speaker.volume = self._load(default_volume)
         speaker.set_enabled(False)   # silent until play()
 
@@ -280,6 +281,7 @@ class SpeakerControl:
         self.set_volume(self.speaker.volume + delta)
 
     def play(self) -> None:
+        self._pause_after_clip = False       # asked to play: stay playing after a clip
         with self._lock:
             if not self.paused:
                 return
@@ -309,6 +311,31 @@ class SpeakerControl:
         with self._lock:
             self.speaker.test = signal
         log.info("speaker: test sound %s", kind)
+
+    def play_clip(self, clip) -> None:
+        """Play ready-made audio (e.g. the spoken address) on the speaker instead
+        of the show. If the radio was paused it plays anyway, then pauses again."""
+        if self.paused:
+            self.play()
+            self._pause_after_clip = True
+            threading.Thread(target=self._pause_when_clips_end, name="clip-pause", daemon=True).start()
+        with self._lock:
+            self.speaker.test = clip
+
+    def _pause_when_clips_end(self) -> None:
+        quiet_since = None
+        deadline = time.monotonic() + 300
+        while self._pause_after_clip and time.monotonic() < deadline:
+            if self.speaker.test is None:
+                quiet_since = quiet_since or time.monotonic()
+                if time.monotonic() - quiet_since > 0.5:     # not just between two clips
+                    break
+            else:
+                quiet_since = None
+            time.sleep(0.05)
+        if self._pause_after_clip:
+            self._pause_after_clip = False
+            self.pause()
 
     def stop_test(self) -> None:
         with self._lock:
