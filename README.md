@@ -189,9 +189,22 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 
 ### The web page
 
-**http://sleepradiopi.local/** (or the address the knob reads out). No
-login: it's meant for a home network. Cards that need a speaker only appear
-when the station has one.
+**http://sleepradiopi.local/** (or the address the knob reads out). The
+main page has the everyday controls — now playing, tune in, volume and sleep
+timer, artist radio, play next, recently on air — and **⚙ Settings** has the
+rest, grouped as Sound, Music and the DJ, and The radio. Cards that need a
+speaker only appear when the station has one.
+
+**Password (optional).** Off to start with; set, change or remove it under
+Settings → Password. Other phones and computers then get a login screen, and
+stay logged in for 30 days (changing or removing the password logs them all
+out). It's kept as a salted PBKDF2 hash in the config (`web_password`), never
+in the settings backup file. The radio itself (127.0.0.1) never needs it, so
+it can always be reset over ssh: `python3 -m sleepradiopi.config.auth clear`
+(`sleepradio-password clear` on the appliance image), or `set` to choose a
+new one. The change is picked up at once.
+
+The cards:
 
 - **Now playing** with a progress bar, what's next, and **Skip**.
 - **Tune in** to listen in the browser (an MP3 stream of the same show).
@@ -242,7 +255,7 @@ when the station has one.
   and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
-- **Settings** — *Save settings* downloads everything above plus the volume
+- **Backup** — *Save settings* downloads everything above plus the volume
   as one JSON file; *Load settings* puts it back (after re-flashing the
   card, or onto a second radio). The file is checked before anything is
   written, and a radio's own set-up (folders, port, sound device, pins) is
@@ -255,10 +268,15 @@ when the station has one.
 
 ### API
 
-All JSON. What the page uses, for scripts and testing:
+All JSON. What the page uses, for scripts and testing. With a password set,
+everything but the page itself and the login needs the session cookie
+(except from the radio itself):
 
 | Request | Does |
 |---|---|
+| `GET /api/auth` | `{"protected", "logged_in", "local"}` |
+| `POST /api/login` / `/api/logout` | `{"password"}` → a session cookie (401 if wrong) / forget it |
+| `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "phase" \| "stop"}` |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
@@ -297,7 +315,8 @@ sleepradiopi/
                eq.py (3-band EQ + low cut), testsignal.py (sweeps, noise, phase check)
   tts/         sherpa-onnx voice, run in a recycled worker process
   web/         MP3 stream, the web page (page.html) and the JSON API (server.py)
-  config/      Settings (JSON), atomic file writes, settings backup (backup.py), "is the clock right?"
+  config/      Settings (JSON), atomic file writes, settings backup (backup.py), the web password
+               (auth.py), "is the clock right?"
   io/          knob.py (rotary encoder + push switch, short/long press), announce.py (spoken address)
   data/        dj_hooks_70s.txt
   playback/    Other sources (deferred: Broadcast is the focus)

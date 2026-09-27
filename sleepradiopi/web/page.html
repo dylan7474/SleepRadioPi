@@ -107,6 +107,16 @@
   #testNow b { color: var(--accent); font-size: 1.4rem; }
   #settingsNote.bad { color: var(--live); }
   #off { border-color: var(--live); color: var(--live); }
+  .head-right { display: flex; align-items: center; gap: .75rem; }
+  button.icon { font-size: 1.25rem; line-height: 1; padding: .35rem .55rem; }
+  .view-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.25rem; }
+  .view-head h2 { margin: 0; }
+  h3.group { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+             margin: 2rem 0 -.4rem; font-weight: 600; }
+  #pwForm input, #loginForm input { flex: 1 1 9rem; min-width: 0; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .5rem .6rem; }
+  #pwRemove, #pwLogout { font-size: .9rem; }
+  code { font-size: .85em; color: var(--text); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
   footer a { color: var(--muted); }
 </style>
@@ -115,8 +125,22 @@
 <main>
   <header>
     <h1 id="stationName">Sleep <span>Radio</span></h1>
-    <span id="badge" class="badge">Off air</span>
+    <div class="head-right">
+      <span id="badge" class="badge">Off air</span>
+      <button id="gear" class="icon" type="button" aria-label="Settings" title="Settings" hidden>⚙</button>
+    </div>
   </header>
+
+  <section id="login" class="card" hidden>
+    <h2>Password</h2>
+    <form id="loginForm" class="row">
+      <input id="loginPw" type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" required>
+      <button type="submit">Log in</button>
+    </form>
+    <p id="loginNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">This radio's page has a password.</p>
+  </section>
+
+  <div id="viewMain" hidden>
 
   <section class="card" aria-live="polite">
     <div id="kind" class="kind">Ready</div>
@@ -132,6 +156,36 @@
   <button id="tune" type="button">▶ Tune in</button>
 
   <section class="card">
+    <div class="row">
+      <label for="vol">Volume</label>
+      <input id="vol" type="range" min="0" max="100" step="1" value="80">
+      <output id="volNum" for="vol" class="muted">80</output>
+    </div>
+    <p id="volNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Also sets the radio's own speaker.</p>
+    <div class="row sleep" role="group" aria-label="Sleep timer">
+      <label>Sleep</label>
+      <button type="button" data-min="0" aria-pressed="true">Off</button>
+      <button type="button" data-min="15" aria-pressed="false">15m</button>
+      <button type="button" data-min="30" aria-pressed="false">30m</button>
+      <button type="button" data-min="60" aria-pressed="false">1h</button>
+      <button type="button" data-min="90" aria-pressed="false">1½h</button>
+      <span id="sleepLeft" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Artist radio</h2>
+    <div class="row" style="margin-top:0">
+      <select id="artistRadio" aria-label="Artist radio">
+        <option value="">All artists (Sleep Radio)</option>
+      </select>
+      <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Edit lists</button>
+    </div>
+    <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
+      Radio), or one of your lists of artists.</p>
+  </section>
+
+  <section class="card">
     <h2>Play next</h2>
     <input id="q" type="search" placeholder="Find a song, artist or album" aria-label="Find a song" autocomplete="off">
     <ul id="results"></ul>
@@ -143,29 +197,56 @@
   </section>
 
   <section class="card">
-    <h2>Artist radio</h2>
-    <div class="row" style="margin-top:0">
-      <select id="artistRadio" aria-label="Artist radio">
-        <option value="">All artists (Sleep Radio)</option>
-      </select>
-      <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Lists…</button>
-    </div>
-    <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
-      Radio), or one of your lists of artists.</p>
-    <div id="listEd" hidden>
-      <div class="row">
-        <select id="listPick" aria-label="List to edit"></select>
-        <input id="listName" placeholder="List name, e.g. Friday List" maxlength="40" aria-label="List name">
-      </div>
-      <input id="listFilter" placeholder="Find an artist" aria-label="Find an artist">
-      <div id="listArtists"></div>
-      <p id="listCount" class="muted" style="margin:.4rem 0 0;font-size:.85rem"></p>
-      <div class="row">
-        <button id="listSave" type="button">Save list</button>
-        <button id="listDelete" type="button" hidden>Delete list</button>
-      </div>
-    </div>
+    <h2>Recently on air</h2>
+    <ul id="history"><li class="muted">Nothing yet.</li></ul>
   </section>
+
+  <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
+    The sleep timer fades out over the last minute (the radio's speakers too).</footer>
+
+  </div>
+
+  <div id="viewSettings" hidden>
+  <div class="view-head">
+    <button id="back" type="button">‹ Back to the radio</button>
+    <h2>Settings</h2>
+  </div>
+
+  <h3 class="group">Sound</h3>
+
+  <section id="eq" class="card" hidden>
+    <div class="card-head">
+      <h2>Speakers</h2>
+      <button id="eqFlat" type="button">Flat EQ</button>
+    </div>
+    <div id="mode" class="row seg" role="group" aria-label="Radio speakers" hidden>
+      <label>Speakers</label>
+      <button type="button" data-mono="false" aria-pressed="true">Stereo</button>
+      <button type="button" data-mono="true" aria-pressed="false">Mono</button>
+    </div>
+    <div class="row"><label for="eq-bass">Bass</label>
+      <input id="eq-bass" data-band="bass" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-bassNum" class="muted">0 dB</output></div>
+    <div class="row"><label for="eq-mid">Mid</label>
+      <input id="eq-mid" data-band="mid" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-midNum" class="muted">0 dB</output></div>
+    <div class="row"><label for="eq-treble">Treble</label>
+      <input id="eq-treble" data-band="treble" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-trebleNum" class="muted">0 dB</output></div>
+    <div id="lowcut" class="row seg" role="group" aria-label="Low cut">
+      <label>Low cut</label>
+      <button type="button" data-hz="0" aria-pressed="true">Off</button>
+      <button type="button" data-hz="100" aria-pressed="false">100</button>
+      <button type="button" data-hz="120" aria-pressed="false">120</button>
+      <button type="button" data-hz="140" aria-pressed="false">140</button>
+      <button type="button" data-hz="160" aria-pressed="false">160 Hz</button>
+    </div>
+    <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
+      A boost lowers the overall level a little, so it can't distort. With the bass port
+      back panel, set the low cut to 140 Hz.</p>
+  </section>
+
+  <h3 class="group">Music and the DJ</h3>
 
   <section id="dj" class="card" hidden>
     <h2>The DJ</h2>
@@ -194,6 +275,25 @@
       (about a minute): only one voice fits in its memory.</p>
   </section>
 
+  <section id="lists" class="card">
+    <h2>Artist lists</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">Your own lists of artists, e.g. a Friday List: choose
+      one under Artist radio on the main page.</p>
+    <div id="listEd">
+      <div class="row">
+        <select id="listPick" aria-label="List to edit"></select>
+        <input id="listName" placeholder="List name, e.g. Friday List" maxlength="40" aria-label="List name">
+      </div>
+      <input id="listFilter" placeholder="Find an artist" aria-label="Find an artist">
+      <div id="listArtists"></div>
+      <p id="listCount" class="muted" style="margin:.4rem 0 0;font-size:.85rem"></p>
+      <div class="row">
+        <button id="listSave" type="button">Save list</button>
+        <button id="listDelete" type="button" hidden>Delete list</button>
+      </div>
+    </div>
+  </section>
+
   <section id="bd" class="card">
     <h2>Birthdays</h2>
     <p id="bdToday" hidden></p>
@@ -210,55 +310,7 @@
       optional: with it the DJ says which birthday.</p>
   </section>
 
-  <section class="card">
-    <div class="row">
-      <label for="vol">Volume</label>
-      <input id="vol" type="range" min="0" max="100" step="1" value="80">
-      <output id="volNum" for="vol" class="muted">80</output>
-    </div>
-    <p id="volNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Also sets the radio's own speaker.</p>
-    <div id="mode" class="row seg" role="group" aria-label="Radio speakers" hidden>
-      <label>Speakers</label>
-      <button type="button" data-mono="false" aria-pressed="true">Stereo</button>
-      <button type="button" data-mono="true" aria-pressed="false">Mono</button>
-    </div>
-    <div class="row sleep" role="group" aria-label="Sleep timer">
-      <label>Sleep</label>
-      <button type="button" data-min="0" aria-pressed="true">Off</button>
-      <button type="button" data-min="15" aria-pressed="false">15m</button>
-      <button type="button" data-min="30" aria-pressed="false">30m</button>
-      <button type="button" data-min="60" aria-pressed="false">1h</button>
-      <button type="button" data-min="90" aria-pressed="false">1½h</button>
-      <span id="sleepLeft" class="muted"></span>
-    </div>
-  </section>
-
-  <section id="eq" class="card" hidden>
-    <div class="card-head">
-      <h2>Speaker EQ</h2>
-      <button id="eqFlat" type="button">Flat</button>
-    </div>
-    <div class="row"><label for="eq-bass">Bass</label>
-      <input id="eq-bass" data-band="bass" type="range" min="-12" max="12" step="1" value="0">
-      <output id="eq-bassNum" class="muted">0 dB</output></div>
-    <div class="row"><label for="eq-mid">Mid</label>
-      <input id="eq-mid" data-band="mid" type="range" min="-12" max="12" step="1" value="0">
-      <output id="eq-midNum" class="muted">0 dB</output></div>
-    <div class="row"><label for="eq-treble">Treble</label>
-      <input id="eq-treble" data-band="treble" type="range" min="-12" max="12" step="1" value="0">
-      <output id="eq-trebleNum" class="muted">0 dB</output></div>
-    <div id="lowcut" class="row seg" role="group" aria-label="Low cut">
-      <label>Low cut</label>
-      <button type="button" data-hz="0" aria-pressed="true">Off</button>
-      <button type="button" data-hz="100" aria-pressed="false">100</button>
-      <button type="button" data-hz="120" aria-pressed="false">120</button>
-      <button type="button" data-hz="140" aria-pressed="false">140</button>
-      <button type="button" data-hz="160" aria-pressed="false">160 Hz</button>
-    </div>
-    <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
-      A boost lowers the overall level a little, so it can't distort. With the bass port
-      back panel, set the low cut to 140 Hz.</p>
-  </section>
+  <h3 class="group">The radio</h3>
 
   <section id="knob" class="card" hidden>
     <h2>Knob switch</h2>
@@ -291,13 +343,24 @@
     <p id="testNow" class="muted" hidden></p>
   </section>
 
-  <section class="card">
-    <h2>Recently on air</h2>
-    <ul id="history"><li class="muted">Nothing yet.</li></ul>
+  <section id="pw" class="card">
+    <h2>Password</h2>
+    <p id="pwState" class="muted" style="margin:0;font-size:.85rem">No password: anyone on your network can use this page.</p>
+    <form id="pwForm" class="row" autocomplete="off">
+      <input id="pwNew" type="password" placeholder="New password" minlength="4" maxlength="128" aria-label="New password" autocomplete="new-password">
+      <input id="pwAgain" type="password" placeholder="Again" minlength="4" maxlength="128" aria-label="New password again" autocomplete="new-password">
+      <button type="submit" id="pwSet">Set password</button>
+    </form>
+    <div class="row">
+      <button id="pwRemove" type="button" hidden>Remove password</button>
+      <button id="pwLogout" type="button" hidden>Log out</button>
+    </div>
+    <p id="pwNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Forgotten it? Over ssh:
+      <code>sleepradio-password clear</code>. The radio itself never needs it.</p>
   </section>
 
   <section id="settings" class="card">
-    <h2>Settings</h2>
+    <h2>Backup</h2>
     <p class="muted" style="margin:0;font-size:.85rem">Keep a copy of the radio's settings on this device,
       or load a saved copy back (after re-flashing the card, or onto another radio).</p>
     <div class="row">
@@ -315,8 +378,7 @@
     </div>
   </section>
 
-  <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
-    The sleep timer fades out over the last minute (the radio's speakers too).</footer>
+  </div>
 </main>
 
 <audio id="audio" preload="none"></audio>
@@ -522,10 +584,6 @@ async function saveLists(lists, done) {
     return true;
   } catch { $("listCount").textContent = "Couldn't reach the radio."; return false; }
 }
-$("listsBtn").onclick = () => {
-  $("listEd").hidden = !$("listEd").hidden;
-  if (!$("listEd").hidden) { fillListPick(); showListEditor(); }
-};
 $("listPick").onchange = showListEditor;
 $("listFilter").oninput = drawListArtists;
 $("listSave").onclick = async () => {
@@ -541,7 +599,6 @@ $("listDelete").onclick = async () => {
   if (!old || !confirm(`Delete the list “${old}”?`)) return;
   if (await saveLists(allLists.filter(p => p.name !== old), `Deleted “${old}”.`)) { await loadArtists(); fillListPick(""); showListEditor(); }
 };
-loadArtists();
 
 // Play next: search the library, and a pick plays after the current song
 // (after any earlier requests). The DJ introduces it.
@@ -639,7 +696,6 @@ document.querySelectorAll("#djChat button").forEach(b => b.onclick = () => setDj
 document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setDj({ dj_hooks: b.dataset.v === "true" }, `70s hooks ${b.textContent.toLowerCase()}.`));
 $("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
 document.querySelectorAll("#djNews button").forEach(b => b.onclick = () => setDj({ news_enabled: b.dataset.v === "true" }, `News ${b.textContent.toLowerCase()}.`));
-loadDj();
 
 // Birthdays: kept on the radio (and in the saved settings file).
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
@@ -702,7 +758,6 @@ $("bdForm").onsubmit = async e => {
   if ($("bdYear").value) entry.year = +$("bdYear").value;
   if (await saveBirthdays([...bdList, entry], `Added ${name}.`)) { $("bdName").value = ""; $("bdYear").value = ""; }
 };
-loadBirthdays();
 
 // The knob's switch: tap = pause/play, hold 3 s = say the address, the
 // same timing as the real one (the fill shows how long to hold).
@@ -792,7 +847,9 @@ const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", m
 async function poll() {
   if (shuttingDown) return;
   try {
-    const s = await (await fetch("/api/status", { cache: "no-store" })).json();
+    const r = await fetch("/api/status", { cache: "no-store" });
+    if (r.status === 401) return showLogin();
+    const s = await r.json();
     // Follow the speaker (the knob, or another page), except mid-drag.
     hasSpeaker = !!s.speaker;
     $("power").hidden = !s.can_power_off;
@@ -852,8 +909,6 @@ async function poll() {
     }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing yet." })]));
   } catch {}
 }
-poll();
-setInterval(poll, 3000);
 
 // Skip applies to the station itself, so the speaker and every listener hear
 // it; a browser hears it a few seconds later (its stream buffer).
@@ -914,8 +969,97 @@ $("off").onclick = async () => {
   $("powerNote").textContent = "Safe to unplug in about 20 seconds.";
 };
 
-// Start playing on open where the browser allows it; otherwise the button does it.
-tuneIn().catch(() => {});
+// --- Views, login and the password ------------------------------------------------
+// The main page has the everyday controls; ⚙ opens Settings (#settings).
+function showView() {
+  const settings = location.hash === "#settings";
+  $("viewMain").hidden = settings;
+  $("viewSettings").hidden = !settings;
+  $("gear").hidden = settings;
+  if (settings) { fillListPick(); showListEditor(); loadAuth(); }
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", () => { if (started) showView(); });
+$("gear").onclick = () => { location.hash = "#settings"; };
+$("back").onclick = () => { location.hash = ""; };
+$("listsBtn").onclick = () => {
+  location.hash = "#settings";
+  setTimeout(() => $("lists").scrollIntoView({ behavior: "smooth" }), 50);
+};
+
+let started = false;
+function start() {
+  if (started) return;
+  started = true;
+  $("login").hidden = true;
+  showView();
+  poll();
+  setInterval(poll, 3000);
+  loadArtists(); loadBirthdays(); loadDj();
+  // Start playing on open where the browser allows it; otherwise the button does it.
+  if (location.hash !== "#settings") tuneIn().catch(() => {});
+}
+function showLogin() {
+  if (started) { location.reload(); return; }   // logged out while using it: start clean
+  $("login").hidden = false;
+  $("viewMain").hidden = $("viewSettings").hidden = $("gear").hidden = true;
+  $("loginPw").focus();
+}
+$("loginForm").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ password: $("loginPw").value }) });
+    if (!r.ok) { $("loginNote").textContent = "That's not the password."; $("loginPw").select(); return; }
+    $("loginPw").value = "";
+    start();
+  } catch { $("loginNote").textContent = "Couldn't reach the radio."; }
+};
+
+function showAuth(a) {
+  $("pwState").textContent = a.protected
+    ? "This page has a password; this device stays logged in for 30 days."
+    : "No password: anyone on your network can use this page.";
+  $("pwSet").textContent = a.protected ? "Change password" : "Set password";
+  $("pwRemove").hidden = !a.protected;
+  $("pwLogout").hidden = !a.protected || a.local;
+}
+async function loadAuth() {
+  try { showAuth(await (await fetch("/api/auth", { cache: "no-store" })).json()); } catch {}
+}
+async function setPassword(password, done) {
+  try {
+    const r = await fetch("/api/password", { method: "POST", headers: { "Content-Type": "application/json" },
+                                             body: JSON.stringify({ password }) });
+    const reply = await r.json();
+    if (!r.ok) { $("pwNote").textContent = "Not changed: " + reply.error + "."; return; }
+    showAuth(reply);
+    $("pwNote").textContent = done;
+  } catch { $("pwNote").textContent = "Couldn't reach the radio."; }
+}
+$("pwForm").onsubmit = e => {
+  e.preventDefault();
+  const a = $("pwNew").value, b = $("pwAgain").value;
+  if (a.length < 4) { $("pwNote").textContent = "At least 4 characters, please."; return; }
+  if (a !== b) { $("pwNote").textContent = "The two don't match."; return; }
+  $("pwNew").value = $("pwAgain").value = "";
+  setPassword(a, "Password set. Other phones and computers will be asked for it; this one stays logged in.");
+};
+$("pwRemove").onclick = () => {
+  if (confirm("Remove the password? Anyone on your network will be able to use this page.")) setPassword(null, "Password removed.");
+};
+$("pwLogout").onclick = async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } catch {}
+  location.hash = ""; location.reload();
+};
+
+(async () => {
+  try {
+    const a = await (await fetch("/api/auth", { cache: "no-store" })).json();
+    if (a.protected && !a.logged_in) return showLogin();
+  } catch {}
+  start();
+})();
 </script>
 </body>
 </html>

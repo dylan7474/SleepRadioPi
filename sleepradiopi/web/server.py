@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from http.cookies import SimpleCookie
 import os
 import queue
 import threading
@@ -19,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from sleepradiopi.broadcast import birthdays, profiles
 from sleepradiopi.broadcast.station import Station
+from sleepradiopi.config.auth import COOKIE, SESSION_S, Auth
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.io.announce import Clip
 from sleepradiopi.config import backup
@@ -52,18 +54,92 @@ def _restart_soon(speaker) -> None:
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None):
+    auth = Auth(config_file)
+    open_paths = {"/", "/index.html", "/api/auth", "/api/login"}
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+
+        # --- the optional password (config/auth.py) --------------------------------------
+
+        def _local(self) -> bool:
+            return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
+        def _token(self) -> str | None:
+            try:
+                morsel = SimpleCookie(self.headers.get("Cookie", "")).get(COOKIE)
+            except Exception:
+                return None
+            return morsel.value if morsel else None
+
+        def _logged_in(self) -> bool:
+            return not auth.protected or self._local() or auth.valid(self._token())
+
+        def _gate(self, path: str) -> bool:
+            """False (and a 401 sent) if this needs the password and hasn't got it."""
+            if path in open_paths or self._logged_in():
+                return True
+            body = json.dumps({"error": "login"}).encode()
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return False
+
+        def _session_cookie(self, token: str | None) -> tuple[str, str]:
+            if token is None:
+                return ("Set-Cookie", f"{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
+            return ("Set-Cookie", f"{COOKIE}={token}; Path=/; Max-Age={SESSION_S}; HttpOnly; SameSite=Strict")
+
+        def _auth_state(self) -> dict:
+            return {"protected": auth.protected, "logged_in": self._logged_in(), "local": self._local()}
+
+        def _login(self) -> None:
+            try:
+                password = self._body().get("password")
+            except (ValueError, AttributeError):
+                password = None
+            if not auth.protected:
+                self._send(json.dumps(self._auth_state()).encode(), "application/json")
+            elif auth.check(password):
+                log.info("login from %s", self.address_string())
+                self._send(json.dumps({"protected": True, "logged_in": True}).encode(), "application/json",
+                           [self._session_cookie(auth.token())])
+            else:
+                log.warning("wrong password from %s", self.address_string())
+                time.sleep(1)                 # slow down guessing
+                body = json.dumps({"error": "wrong password"}).encode()
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        def _set_password(self) -> None:
+            """POST /api/password {"password": "..." | null}: set, change or remove.
+            Changing it logs every other browser out; this one gets a new cookie."""
+            try:
+                password = self._body()["password"]
+                auth.set_password(password)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"password\": ...}")
+                return
+            log.info("web password %s from %s", "removed" if password is None else "set", self.address_string())
+            cookie = self._session_cookie(None if password is None else auth.token())
+            self._send(json.dumps(self._auth_state()).encode(), "application/json", [cookie])
 
         def log_message(self, fmt, *args):  # keep stream polling out of the journal
             if not self.path.startswith("/api/"):
                 log.info("%s %s", self.address_string(), fmt % args)
 
-        def _send(self, body: bytes, ctype: str) -> None:
+        def _send(self, body: bytes, ctype: str, headers: list[tuple[str, str]] = ()) -> None:
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for name, value in headers:
+                self.send_header(name, value)
             self.end_headers()
             try:
                 self.wfile.write(body)
@@ -72,7 +148,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def do_GET(self) -> None:
             path = urlparse(self.path).path
-            if path in ("/", "/index.html"):
+            if not self._gate(path):
+                return
+            if path == "/api/auth":
+                self._send(json.dumps(self._auth_state()).encode(), "application/json")
+            elif path in ("/", "/index.html"):
                 self._send(PAGE, "text/html; charset=utf-8")
             elif path == "/api/status":
                 status = station.status()
@@ -99,7 +179,17 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
-            if path == "/api/power":
+            if not self._gate(path):
+                self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
+                return
+            if path == "/api/login":
+                self._login()
+            elif path == "/api/logout":
+                self._send(json.dumps({"logged_in": False}).encode(), "application/json",
+                           [self._session_cookie(None)])
+            elif path == "/api/password":
+                self._set_password()
+            elif path == "/api/power":
                 self._power()
             elif path == "/api/skip":
                 self.rfile.read(int(self.headers.get("Content-Length", 0)))  # no body needed

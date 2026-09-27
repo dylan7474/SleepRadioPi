@@ -50,19 +50,25 @@ modules stay in the tree until that's decided.
 15. **Birthdays** — the DJ wishes people a happy birthday on the day.
 16. **DJ settings on the page** — voice, how often the DJ talks, 70s hooks,
     jingles and news.
-17. **Play next** — search the library from the page and queue songs; the
+17. **Tidier web page and a password** — everyday controls up front, the
+    rest under Settings; an optional password, set from the page and
+    resettable over ssh.
+18. **Play next** — search the library from the page and queue songs; the
     DJ introduces them. Jingles only on the main mix.
 
 ## Next
 
-18. **Wire the knob and the RTC** — check the knob's direction and step and
+19. **Wire the knob and the RTC** — check the knob's direction and step and
     the long press on the real switch; the RTC with no network.
-19. **Tidier web page** — everyday controls up front and the rest behind a
-    Settings button; optional password protection (set from the page,
-    resettable over ssh). Then the DJ's speed/level and quiet hours on the
-    page too.
-20. **A lighter web side** — the browser stream off by default (it runs an
+20. **Album mode** — play an album start to finish.
+21. **Wi-Fi manager** — several saved networks tried in turn at start-up,
+    added from the page; a hotspot with a fixed name and password when none
+    is in range.
+22. **A start-up sound** — a chime and a spoken "warming up", so a slow
+    start doesn't look broken.
+23. **The default voice** — download the stock voice when a radio has none.
+24. **A lighter web side** — the browser stream off by default (it runs an
     MP3 encoder all the time).
-21. **Library tools** — copying/syncing music from the desktop library.
-22. **A needle VU meter** — a physical meter driven from a PWM pin, with the
+25. **Library tools** — copying/syncing music from the desktop library.
+26. **A needle VU meter** — a physical meter driven from a PWM pin, with the
     Android app's ballistics (see the appliance image's roadmap).
