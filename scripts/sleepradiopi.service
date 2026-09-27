@@ -11,6 +11,8 @@ WorkingDirectory=/home/pi/SleepRadioPi
 ExecStart=/home/pi/SleepRadioPi/.venv/bin/python -u -m sleepradiopi.main
 # Fewer glibc malloc arenas: the Pi Zero 2 W's RAM is the station's limit.
 Environment=MALLOC_ARENA_MAX=2
+# Loading settings from the web page may exit (code 75) to restart the station.
+Environment=SLEEPRADIOPI_SUPERVISED=1
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5

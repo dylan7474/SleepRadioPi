@@ -157,6 +157,15 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   `{"pause": true | false | "toggle"}` (the knob's controls, for testing) or
   `{"mono": true | false}` or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
   (any of the bands; both saved in the config).
+- **Settings** card: *Save settings* downloads the settings and the speaker
+  volume as one JSON file (`GET /api/settings`); *Load settings* sends one
+  back (`POST /api/settings`), e.g. after re-flashing the card or onto a
+  second radio. The file is checked before anything is written; a radio's
+  own set-up (music/voice folders, port, sound device, pins) is never saved
+  or loaded. Volume, mono and EQ change at once; any other change makes the
+  station exit with code 75 to be restarted, but only where
+  `SLEEPRADIOPI_SUPERVISED` is set (the service and the appliance image set
+  it); otherwise it applies at the next start.
 - `POST /api/power` — shut the radio down (the page's **Shut down** button,
   which asks first). The station isn't root, so it only creates the file
   named by `SLEEPRADIOPI_POWER_REQUEST`; something running as root must

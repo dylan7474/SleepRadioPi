@@ -66,7 +66,7 @@ def main() -> None:
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
-    serve(station, stream, args.port or settings.http_port, control)
+    serve(station, stream, args.port or settings.http_port, control, args.config)
 
 
 if __name__ == "__main__":

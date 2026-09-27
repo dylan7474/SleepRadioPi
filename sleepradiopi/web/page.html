@@ -55,6 +55,12 @@
   .card-head { display: flex; align-items: center; justify-content: space-between; }
   .card-head h2 { margin: 0; }
   #eqFlat { padding: .3rem .7rem; font-size: .85rem; }
+  a.btn { font: inherit; font-size: .9rem; border-radius: .6rem; border: 1px solid var(--line);
+          color: var(--text); padding: .45rem .9rem; text-decoration: none; display: inline-block; }
+  a.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #settings button { font-size: .9rem; padding: .45rem .9rem; }
+  #settingsNote { margin: .75rem 0 0; font-size: .85rem; }
+  #settingsNote.bad { color: var(--live); }
   #off { border-color: var(--live); color: var(--live); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
   footer a { color: var(--muted); }
@@ -124,6 +130,18 @@
   <section class="card">
     <h2>Recently on air</h2>
     <ul id="history"><li class="muted">Nothing yet.</li></ul>
+  </section>
+
+  <section id="settings" class="card">
+    <h2>Settings</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">Keep a copy of the radio's settings on this device,
+      or load a saved copy back (after re-flashing the card, or onto another radio).</p>
+    <div class="row">
+      <a id="saveSettings" class="btn" href="/api/settings" download>Save settings</a>
+      <button id="loadSettings" type="button">Load settings…</button>
+      <input id="settingsFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <p id="settingsNote" class="muted" hidden></p>
   </section>
 
   <section id="power" class="card" hidden>
@@ -312,6 +330,34 @@ $("skip").onclick = async () => {
   $("skip").disabled = true;
   try { await fetch("/api/skip", { method: "POST" }); } catch {}
   setTimeout(() => { $("skip").disabled = false; poll(); }, 1500);
+};
+
+// Save is a plain download. Load sends the chosen file to the radio, which
+// checks it first; volume, mono and EQ change at once, anything else makes
+// the station restart (about 20 seconds).
+function settingsNote(text, bad) {
+  const n = $("settingsNote");
+  n.textContent = text; n.hidden = false; n.classList.toggle("bad", !!bad);
+}
+$("loadSettings").onclick = () => $("settingsFile").click();
+$("settingsFile").onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!confirm(`Load the settings from "${file.name}"?\n\nThey replace this radio's settings.`)) return;
+  try {
+    const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" },
+                                             body: await file.text() });
+    const reply = await r.json().catch(() => ({}));
+    if (!r.ok) return settingsNote("Not loaded: " + (reply.error || "the radio said no (" + r.status + ")") + ".", true);
+    settingsNote(reply.restarting ? "Loaded. The radio is restarting to use them; back in about 20 seconds."
+               : reply.needs_restart ? "Loaded. Some take effect the next time the radio starts."
+               : reply.changed.length ? "Loaded." : "Loaded. They were the same as the radio's already.");
+    lastInput = eqInput = modeSent = 0;   // let the page follow the new volume, EQ and mode
+    poll();
+  } catch {
+    settingsNote("Couldn't reach the radio. Try again?", true);
+  }
 };
 
 $("off").onclick = async () => {
