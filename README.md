@@ -143,7 +143,10 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 
 - **http://sleepradiopi.local/** — listen in a browser, now playing, history.
   With a speaker, the page's volume slider sets the speaker too (same 0–100
-  scale) and follows the knob. Its **Speakers** buttons switch the speaker
+  scale) and follows the knob. Its sleep timer runs on the radio: it fades
+  the speaker (and the page's own stream) over the last minute, then pauses
+  the speaker; every open page shows the same countdown, and a pause from
+  the knob or the page cancels it. Its **Speakers** buttons switch the speaker
   between stereo and mono at once and save it (`speaker_mono`); the browser
   stream stays stereo.
   Its **Speaker EQ** card sets bass / mid / treble (±12 dB; shelves at
@@ -154,7 +157,8 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   so they can't clip.
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
 - `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
-  `{"pause": true | false | "toggle"}` (the knob's controls, for testing) or
+  `{"pause": true | false | "toggle"}` (the knob's controls, for testing),
+  `{"sleep": minutes}` (0 = off; not kept over a restart) or
   `{"mono": true | false}` or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
   (any of the bands; both saved in the config).
 - **Settings** card: *Save settings* downloads the settings and the speaker

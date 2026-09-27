@@ -72,7 +72,8 @@ def test_control_joins_once_and_remembers_volume(tmp_path: Path, monkeypatch) ->
     state = tmp_path / "state" / "speaker.json"
     ctl = SpeakerControl(spk, lambda: calls.append("join"), lambda: calls.append("leave"),
                          state_file=state, default_volume=40)
-    assert ctl.status() == {"volume": 40, "playing": False, "mono": False}
+    assert ctl.status() == {"volume": 40, "playing": False, "mono": False,
+                            "sleep_min": None, "sleep_left_s": None}
     ctl.play(); ctl.play(); ctl.toggle(); ctl.toggle()
     assert calls == ["join", "leave", "join"]
     ctl.set_volume(250)
@@ -109,3 +110,41 @@ def test_knob_reads_input_devices(tmp_path: Path) -> None:
     os.write(fd, _event(EV_REL, 1) + _event(EV_REL, 1) + _event(EV_KEY, 1))
     assert _wait(lambda: turns == [1, 1] and presses == [1])
     os.close(fd)
+
+
+def test_sleep_timer_fades_the_speaker_then_pauses(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(speaker_mod, "SLEEP_FADE_S", 0.4)
+    out = tmp_path / "played.raw"
+    spk = SpeakerOutput(command=["sh", "-c", f"cat >> {out}"])
+    calls = []
+    ctl = SpeakerControl(spk, lambda: calls.append("join"), lambda: calls.append("leave"))
+    spk.volume = 100
+    spk.start()                                # the show is running
+    ctl.play()
+    block = np.full((1024, 2), 10000, dtype=np.int16)
+    ctl.set_sleep(0.6 / 60)                    # 0.6 s: full volume, then a 0.4 s fade
+    assert ctl.status()["sleep_min"] == 0.01 and ctl.status()["sleep_left_s"] in (0, 1)
+    spk.write(block)                           # before the fade: full volume
+    time.sleep(0.4)
+    spk.write(block)                           # halfway through the fade
+    assert _wait(lambda: ctl.paused, timeout=2)
+    assert calls == ["join", "leave"] and spk.fade_end is None
+    assert ctl.status()["sleep_left_s"] is None
+    played = np.frombuffer(out.read_bytes(), dtype=np.int16).reshape(-1, 2)
+    assert (played[:1024] == 10000).all()
+    assert 2000 < played[1024:, 0].mean() < 8000
+    ctl.play()                                 # the next play is at full volume again
+    assert spk.fade_end is None
+
+
+def test_pausing_or_cancelling_ends_the_sleep_timer(tmp_path: Path) -> None:
+    spk, _ = _speaker(tmp_path)
+    ctl = SpeakerControl(spk, lambda: None, lambda: None)
+    ctl.play()
+    ctl.set_sleep(30)
+    assert ctl.status()["sleep_min"] == 30 and 1790 < ctl.status()["sleep_left_s"] <= 1800
+    ctl.set_sleep(0)
+    assert spk.fade_end is None and ctl.status()["sleep_min"] is None
+    ctl.set_sleep(15)
+    ctl.pause()                                # e.g. the knob
+    assert spk.fade_end is None and ctl._sleep_timer is None

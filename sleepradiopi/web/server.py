@@ -168,7 +168,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _speaker(self) -> None:
             """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
-            {"pause": true | false | "toggle"}, {"mono": true | false} or
+            {"pause": true | false | "toggle"}, {"sleep": minutes (0 = off)},
+            {"mono": true | false} or
             {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three).
             Replies with the speaker's status."""
             try:
@@ -188,6 +189,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             and not isinstance(v, bool) for k, v in eq.items()):
                         raise ValueError("eq must map bass/mid/treble to numbers")
                     speaker.set_eq(eq)
+                if "sleep" in body:
+                    minutes = body["sleep"]
+                    if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) \
+                            or not 0 <= minutes <= 600:
+                        raise ValueError("sleep must be 0-600 minutes")
+                    speaker.set_sleep(minutes)
                 if body.get("pause") == "toggle":
                     speaker.toggle()
                 elif body.get("pause") is True:

@@ -16,6 +16,7 @@ import json
 import logging
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -33,6 +34,8 @@ ALSA_BUFFER_US = 250_000     # aplay's own buffer; smaller risks underruns on a 
 DB_PER_STEP = 0.5            # volume 100 = full scale, 0 = silent
 F_SETPIPE_SZ = 1031          # fcntl.F_SETPIPE_SZ (Linux), missing from older Pythons
 SAVE_AFTER_S = 3.0           # save the volume once the knob has been still this long
+SLEEP_FADE_S = 60.0          # the sleep timer fades the speaker out over its last minute
+MAX_SLEEP_MIN = 600
 
 
 def gain(volume: int) -> float:
@@ -56,6 +59,7 @@ class SpeakerOutput:
         self.volume = volume
         self.mono = mono                 # both speakers play (L + R) / 2
         self.eq = eq                     # bass/mid/treble, the speaker only
+        self.fade_end: float | None = None  # sleep timer: silent at this time.monotonic()
         self.enabled = True
         self._running = False            # between the show's start() and stop()
         self._proc: subprocess.Popen | None = None
@@ -98,6 +102,8 @@ class SpeakerOutput:
             with self._lock:
                 proc = self._proc
                 g = gain(self.volume)
+                if self.fade_end is not None:
+                    g *= max(0.0, min(1.0, (self.fade_end - time.monotonic()) / SLEEP_FADE_S))
             if proc is None:
                 return
             x = block[i:i + SLICE_FRAMES].astype(np.float32)
@@ -172,6 +178,8 @@ class SpeakerControl:
         self.paused = True
         self._lock = threading.Lock()
         self._save_timer: threading.Timer | None = None
+        self._sleep_timer: threading.Timer | None = None
+        self._sleep_min = 0
         speaker.volume = self._load(default_volume)
         speaker.set_enabled(False)   # silent until play()
 
@@ -254,6 +262,7 @@ class SpeakerControl:
         self._join()
 
     def pause(self) -> None:
+        self.set_sleep(0)            # a pause (knob, page or the timer itself) ends the timer
         with self._lock:
             if self.paused:
                 return
@@ -261,6 +270,32 @@ class SpeakerControl:
             self.speaker.set_enabled(False)
         log.info("speaker: pause")
         self._leave()
+
+    def set_sleep(self, minutes: float) -> None:
+        """Sleep timer: fade the speaker out over the last minute, then pause.
+        0 cancels it (back to full volume). Not remembered over a restart."""
+        minutes = max(0.0, min(float(minutes), MAX_SLEEP_MIN))
+        with self._lock:
+            if self._sleep_timer is not None:
+                self._sleep_timer.cancel()
+                self._sleep_timer = None
+            was = self._sleep_min
+            self._sleep_min = minutes
+            if minutes:
+                self.speaker.fade_end = time.monotonic() + minutes * 60
+                self._sleep_timer = threading.Timer(minutes * 60, self._sleep_done)
+                self._sleep_timer.daemon = True
+                self._sleep_timer.start()
+            else:
+                self.speaker.fade_end = None
+        if minutes or was:
+            log.info("speaker: sleep timer %s", f"{minutes:g} min" if minutes else "off")
+
+    def _sleep_done(self) -> None:
+        log.info("speaker: sleep timer ended")
+        with self._lock:
+            self._sleep_min = 0          # so the pause below doesn't log "off" as well
+        self.pause()
 
     def toggle(self) -> None:
         if self.paused:
@@ -270,7 +305,11 @@ class SpeakerControl:
 
     def status(self) -> dict:
         status = {"volume": self.speaker.volume, "playing": not self.paused,
-                  "mono": self.speaker.mono}
+                  "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None}
+        end = self.speaker.fade_end
+        if end is not None and self._sleep_min:
+            status["sleep_min"] = self._sleep_min
+            status["sleep_left_s"] = max(0, round(end - time.monotonic()))
         if self.speaker.eq is not None:
             status["eq"] = dict(self.speaker.eq.gains)
         return status

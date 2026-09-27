@@ -152,7 +152,7 @@
   </section>
 
   <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
-    Sleep timer fades out over the last minute.</footer>
+    The sleep timer fades out over the last minute (the radio's speakers too).</footer>
 </main>
 
 <audio id="audio" preload="none"></audio>
@@ -248,20 +248,37 @@ function queueEq() {
 BANDS.forEach(b => $("eq-" + b).oninput = e => { eq = { ...eq, [b]: parseInt(e.target.value, 10) }; queueEq(); });
 $("eqFlat").onclick = () => { eq = { bass: 0, mid: 0, treble: 0 }; queueEq(); };
 
+// Sleep timer. With a speaker the radio runs it (it fades the speaker over
+// the last minute, then pauses it) and this page follows it, so it keeps
+// going when the phone locks and every page shows the same countdown. This
+// page's own stream fades and stops at the same time.
+let sleepSent = 0;
+const pressSleep = min => document.querySelectorAll(".sleep button")
+  .forEach(x => x.setAttribute("aria-pressed", String(x.dataset.min === String(min))));
+function sleepOff() { sleepEnd = 0; audio.volume = baseVol; $("sleepLeft").textContent = ""; pressSleep(0); }
+function sleepDone() { tuneOut(); sleepOff(); $("sleepLeft").textContent = "Goodnight"; }
 document.querySelectorAll(".sleep button").forEach(b => b.onclick = () => {
   const min = parseInt(b.dataset.min, 10);
-  sleepEnd = min ? Date.now() + min * 60000 : 0;
-  document.querySelectorAll(".sleep button").forEach(x => x.setAttribute("aria-pressed", x === b));
-  if (!sleepEnd) { audio.volume = baseVol; $("sleepLeft").textContent = ""; }
+  if (min) { sleepEnd = Date.now() + min * 60000; pressSleep(min); } else sleepOff();
+  if (hasSpeaker) {
+    sleepSent = Date.now();
+    fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ sleep: min }) }).catch(() => {});
+  }
 });
+function followSleep(sp) {
+  if (Date.now() - sleepSent < 2000) return;
+  if (sp.sleep_left_s == null) {
+    if (sleepEnd) (sleepEnd - Date.now() < 4000 ? sleepDone : sleepOff)();  // ended, or cancelled elsewhere
+  } else {
+    sleepEnd = Date.now() + sp.sleep_left_s * 1000;
+    pressSleep(sp.sleep_min);
+  }
+}
 setInterval(() => {
   if (!sleepEnd) return;
   const left = sleepEnd - Date.now();
-  if (left <= 0) {
-    tuneOut(); sleepEnd = 0; audio.volume = baseVol; $("sleepLeft").textContent = "Goodnight";
-    document.querySelectorAll(".sleep button").forEach(x => x.setAttribute("aria-pressed", x.dataset.min === "0"));
-    return;
-  }
+  if (left <= 0) return sleepDone();
   audio.volume = baseVol * Math.min(1, left / 60000);
   $("sleepLeft").textContent = Math.ceil(left / 60000) + " min left";
 }, 1000);
@@ -279,6 +296,7 @@ async function poll() {
     $("power").hidden = !s.can_power_off;
     $("volNote").hidden = !hasSpeaker;
     $("mode").hidden = !hasSpeaker;
+    if (hasSpeaker) followSleep(s.speaker);
     $("eq").hidden = !(hasSpeaker && s.speaker.eq);
     if (hasSpeaker && s.speaker.eq && !eqTimer && Date.now() - eqInput > 2000 &&
         BANDS.some(b => s.speaker.eq[b] !== eq[b])) {
