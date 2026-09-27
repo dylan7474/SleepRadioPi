@@ -27,7 +27,7 @@ import logging
 import random
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -43,7 +43,7 @@ from sleepradiopi.tts.worker import TtsWorker
 from .library import scan_jingles, scan_music
 from .models import BroadcastConfig, BroadcastTrack, Chattiness, JingleClip, LinkKind
 from .news import DueNews, NewsRepository, NewsSchedule, QuietHours, build_bulletin_body, bulletin_time_line
-from .script_builder import DjScriptBuilder, ShowClock
+from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
 from .selector import BroadcastSelector, HookPool, parse_hooks
 
 log = logging.getLogger(__name__)
@@ -112,6 +112,12 @@ class OnAir:
     duration_s: float = 0.0
 
 
+def artist_key(artist: str) -> str:
+    """"The Beatles", "Beatles", "beatles " -> "beatles"."""
+    key = " ".join(artist.lower().split())
+    return key[4:] if key.startswith("the ") and len(key) > 4 else key
+
+
 class Station:
     def __init__(self, cfg: dict, tts: TtsWorker | None, output: Output) -> None:
         self.music_dir: Path = cfg["music_folder"]
@@ -149,6 +155,7 @@ class Station:
 
         self.tracks = scan_music(self.music_dir, cfg.get("tag_cache"))
         self.selector = BroadcastSelector(self.tracks)
+        self.artist: str | None = None      # artist radio: only this artist's tracks
         self.jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every else []
         self._jingle_paths = {j.path for j in self.jingles}
         self._jingle_bag: deque[JingleClip] = deque()
@@ -179,6 +186,8 @@ class Station:
         self.gap_plan: list[str] = []
         self.history: deque[dict] = deque(maxlen=12)
         self.shows_started = 0
+        if cfg.get("broadcast_artist"):
+            self._use_artist(cfg["broadcast_artist"])
         self._prepare_opening()
 
     # --- listeners / show lifecycle ---------------------------------------------------
@@ -531,6 +540,51 @@ class Station:
 
     # --- opening ----------------------------------------------------------------------
 
+    # --- artist radio ------------------------------------------------------------------
+
+    def artists(self) -> list[dict]:
+        """Every artist in the library with its track count, by name. Spellings
+        that differ only in case or a leading "The" count as one artist."""
+        groups: dict[str, Counter] = {}
+        for t in self.tracks:
+            if t.artist.strip():
+                groups.setdefault(artist_key(t.artist), Counter())[t.artist.strip()] += 1
+        out = [{"name": c.most_common(1)[0][0], "tracks": sum(c.values())} for c in groups.values()]
+        return sorted(out, key=lambda a: artist_key(a["name"]))
+
+    def _use_artist(self, artist: str | None) -> bool:
+        """Switch the selector (and the DJ's station name). False, and back to
+        everything, if the library has nothing by that artist."""
+        found, pool = True, self.tracks
+        if artist:
+            key = artist_key(artist)
+            pool = [t for t in self.tracks if artist_key(t.artist) == key]
+            if not pool:
+                log.warning("artist radio: no tracks by %r; playing everything", artist)
+                found, artist, pool = False, None, self.tracks
+        self.artist = artist
+        self.selector = BroadcastSelector(pool)
+        self.builder.station = artist_station_name(artist)
+        return found
+
+    def set_artist(self, artist: str | None) -> bool:
+        """Play only this artist (None = everything). On air, the track already
+        lined up next still plays (the DJ may have introduced it), then the
+        new choice. False if the library has nothing by that artist."""
+        with self._lock:
+            on_air = self._thread is not None and self._thread.is_alive()
+            found = self._use_artist(artist)
+            if on_air:
+                while len(self._queue) > 1:     # keep the one that's been announced
+                    self._queue.pop()
+            else:
+                self._queue.clear()
+                self._opening = None
+        log.info("artist radio: %s (%s)", self.artist or "everything", self.builder.station)
+        if not on_air and self.tracks:
+            self._prepare_opening()
+        return found
+
     def _prepare_opening(self) -> None:
         """Pick the first track and synthesise the welcome while idle, so tuning in
         starts at once. Rebuilt if the greeting's time of day has changed."""
@@ -581,6 +635,8 @@ class Station:
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
             "library": {"tracks": len(self.tracks), "jingles": len(self.jingles)},
+            "artist": self.artist,
+            "station_name": self.builder.station,
             "voices_ready": bool(self.tts and self.tts.ready),
             "voice": {"name": self.dj_voice, "rss_mb": self.tts.last_rss_mb, "restarts": self.tts.restarts}
             if self.tts else None,

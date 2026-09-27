@@ -61,6 +61,9 @@
   #settings button { font-size: .9rem; padding: .45rem .9rem; }
   #settingsNote { margin: .75rem 0 0; font-size: .85rem; }
   #test button { font-size: .9rem; padding: .45rem .8rem; }
+  #artistRadio { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
+            border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .6rem; }
+  #artistRadio:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   #knobBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; font-size: 1rem;
              touch-action: none; user-select: none; -webkit-user-select: none; }
   #knobBtn span { position: relative; }
@@ -78,7 +81,7 @@
 <body>
 <main>
   <header>
-    <h1>Sleep <span>Radio</span></h1>
+    <h1 id="stationName">Sleep <span>Radio</span></h1>
     <span id="badge" class="badge">Off air</span>
   </header>
 
@@ -94,6 +97,16 @@
   </section>
 
   <button id="tune" type="button">▶ Tune in</button>
+
+  <section class="card">
+    <h2>Artist radio</h2>
+    <div class="row" style="margin-top:0">
+      <select id="artistRadio" aria-label="Artist radio">
+        <option value="">All artists (Sleep Radio)</option>
+      </select>
+    </div>
+    <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only, e.g. Beatles Radio.</p>
+  </section>
 
   <section class="card">
     <div class="row">
@@ -321,6 +334,48 @@ async function sendTest(test) {
 document.querySelectorAll("#test button[data-test]").forEach(b => b.onclick = () => sendTest(b.dataset.test));
 $("testStop").onclick = () => sendTest("stop");
 
+// Artist radio: one artist only, and the DJ (and this page) call the station
+// after them. On air the song already lined up next still plays first.
+let artistNow = null;
+async function loadArtists() {
+  try {
+    const data = await (await fetch("/api/artists", { cache: "no-store" })).json();
+    const sel = $("artistRadio");
+    sel.replaceChildren(sel.options[0]);   // (drops a placeholder added by selectArtist)
+    for (const a of data.artists) {
+      const o = document.createElement("option");
+      o.value = a.name; o.textContent = `${a.name} (${a.tracks})`;
+      sel.append(o);
+    }
+    showArtist(data.artist, data.station_name);
+  } catch {}
+}
+function selectArtist(artist) {
+  const sel = $("artistRadio");
+  if (artist && ![...sel.options].some(o => o.value === artist))   // list not loaded yet
+    sel.append(Object.assign(document.createElement("option"), { value: artist, textContent: artist }));
+  sel.value = artist || "";
+}
+function showArtist(artist, name) {
+  artistNow = artist;
+  selectArtist(artist);
+  const words = (name || "Sleep Radio").split(" ");
+  const last = words.pop();
+  $("stationName").replaceChildren(words.join(" ") + " ", Object.assign(document.createElement("span"), { textContent: last }));
+  document.title = name || "Sleep Radio";
+}
+$("artistRadio").onchange = async e => {
+  const artist = e.target.value || null;
+  try {
+    const r = await (await fetch("/api/station", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify({ artist }) })).json();
+    showArtist(r.artist, r.station_name);
+    $("artistNote").textContent = !r.found ? "Nothing by that artist here any more; playing everything."
+      : artist ? `${r.station_name}: after the song that's lined up next.` : "Back to everything.";
+  } catch { $("artistNote").textContent = "Couldn't reach the radio."; }
+};
+loadArtists();
+
 // The knob's switch: tap = pause/play, hold 3 s = say the address, the
 // same timing as the real one (the fill shows how long to hold).
 let knobTimer = null, knobLong = false;
@@ -438,6 +493,8 @@ async function poll() {
       vol = s.speaker.volume;
       showVol();
     }
+    if (s.station_name && (s.artist ?? null) !== artistNow && document.activeElement !== $("artistRadio"))
+      showArtist(s.artist ?? null, s.station_name);    // changed on another phone
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
     badge.classList.toggle("live", s.on_air);

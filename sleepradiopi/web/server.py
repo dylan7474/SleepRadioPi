@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config import backup
+from sleepradiopi.config.settings import save_setting
 from sleepradiopi.config.power import can_power_off, request_power_off
 
 from .stream import Mp3Output
@@ -77,6 +78,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._save_settings()
+            elif path == "/api/artists":
+                self._send(json.dumps({"artist": station.artist, "station_name": station.builder.station,
+                                       "artists": station.artists()}).encode(), "application/json")
             elif path == "/stream":
                 self._stream()
             else:
@@ -95,6 +99,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._load_settings()
             elif path == "/api/knob" and speaker is not None:
                 self._knob()
+            elif path == "/api/station":
+                self._station()
             else:
                 self.send_error(404)
 
@@ -148,6 +154,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self.wfile.write(body)
                 return
             changed = backup.apply(config_file, settings)     # before the live ones save theirs
+            if "broadcast_artist" in changed:
+                station.set_artist(settings["broadcast_artist"])
             if speaker is not None:
                 if "speaker_mono" in settings:
                     speaker.set_mono(settings["speaker_mono"])
@@ -169,6 +177,23 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                    "restarting": restarting}).encode(), "application/json")
             if restarting:
                 _restart_soon(speaker)
+
+        def _station(self) -> None:
+            """/api/station {"artist": "The Beatles" | null}: artist radio (only
+            that artist, and the DJ says "Beatles Radio"), or everything. Saved."""
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                artist = body["artist"]
+                if artist is not None and (not isinstance(artist, str) or len(artist) > 200):
+                    raise ValueError("artist must be a name or null")
+            except (ValueError, TypeError, KeyError, AttributeError):
+                self.send_error(400)
+                return
+            found = station.set_artist(artist.strip() if artist else None)
+            if config_file is not None:
+                save_setting(config_file, "broadcast_artist", station.artist)
+            self._send(json.dumps({"found": found, "artist": station.artist,
+                                   "station_name": station.builder.station}).encode(), "application/json")
 
         def _knob(self) -> None:
             """/api/knob {"press": "short" | "long"}: the knob's switch, from the

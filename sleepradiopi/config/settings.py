@@ -26,6 +26,7 @@ class Settings:
     voices_folder: str | None = None      # default <repo>/voices
     hooks_file: str | None = None         # default: the bundled sleepradiopi/data/dj_hooks_70s.txt
     broadcast_voice: str | None = "stock"      # "stock" or "personal"; None = music and jingles only
+    broadcast_artist: str | None = None   # artist radio ("The Beatles" -> "Beatles Radio"); None = everything
     broadcast_chattiness: str = "maximum"
     broadcast_jingle_enabled: bool = True
     broadcast_jingle_every: int = 4
@@ -60,6 +61,16 @@ def load(path: Path) -> Settings:
     raw = json.loads(path.read_text())
     known = {f.name for f in fields(Settings)}
     return Settings(**{k: v for k, v in raw.items() if k in known})
+
+
+def save_setting(path: Path, key: str, value) -> None:
+    """Set one key in the config file, keeping everything else in it as it is."""
+    try:
+        conf = json.loads(path.read_text())
+    except (OSError, ValueError):
+        conf = {}
+    conf[key] = value
+    write_atomic(path, json.dumps(conf, indent=2) + "\n")
 
 
 def save(path: Path, settings: Settings) -> None:

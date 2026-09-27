@@ -57,24 +57,37 @@ class ShowClock:
 
 WELCOME_TAILS = ["Let's begin.", "Here's the music.", "Settle in.", "Let's get started."]
 OPENERS = ["First up,", "We begin with", "Kicking off with", "To start,"]
-IDENTS = [
-    "You're listening to Sleep Radio.",
-    "This is Sleep Radio — music through the night.",
-    "Sleep Radio. Stay with us.",
+IDENTS = [                   # {station}: "Sleep Radio", or e.g. "Beatles Radio"
+    "You're listening to {station}.",
+    "This is {station} — music through the night.",
+    "{station}. Stay with us.",
 ]
 OUTROS = ["That was", "You just heard", "We just heard"]
 INTROS = ["Coming up,", "Next up,", "Here's", "Let's hear"]
 EXACT_TIME_LEADS = ["The time is", "It's"]
-STATION_ONLY = ["You're with Sleep Radio.", "More music in a moment."]
+STATION_ONLY = ["You're with {station}.", "More music in a moment."]
+DEFAULT_STATION = "Sleep Radio"
+
+
+def artist_station_name(artist: str | None) -> str:
+    """"The Beatles" -> "Beatles Radio"; None -> "Sleep Radio"."""
+    if not artist:
+        return DEFAULT_STATION
+    name = artist.strip()
+    if name.lower().startswith("the ") and len(name) > 4:
+        name = name[4:]
+    return f"{name} Radio"
 
 
 class DjScriptBuilder:
-    def __init__(self, rng: random.Random | None = None, hooks: HookPool | None = None) -> None:
+    def __init__(self, rng: random.Random | None = None, hooks: HookPool | None = None,
+                 station: str = DEFAULT_STATION) -> None:
         self.rng = rng or random.Random()
         self.hooks = hooks
+        self.station = station      # the name the DJ uses; changes with artist radio
 
     def _pick(self, options: list[str]) -> str:
-        return options[self.rng.randrange(len(options))]
+        return options[self.rng.randrange(len(options))].format(station=self.station)
 
     def welcome(self, first: BroadcastTrack | None = None, now: Time | None = None) -> str:
         if first is not None:
@@ -83,12 +96,12 @@ class DjScriptBuilder:
 
     def welcome_greeting(self, now: Time | None = None, time_known: bool = True) -> str:
         if not time_known:   # offline with no clock: don't guess the time of day
-            return "Hello, and welcome to Sleep Radio."
+            return f"Hello, and welcome to {self.station}."
         hour = (now or datetime.now().time()).hour
         greeting = ("Good morning" if 5 <= hour <= 11 else
                     "Good afternoon" if 12 <= hour <= 17 else
                     "Good evening" if 18 <= hour <= 21 else "Hello")
-        return f"{greeting}, and welcome to Sleep Radio."
+        return f"{greeting}, and welcome to {self.station}."
 
     def welcome_first_track(self, first: BroadcastTrack) -> str:
         return f"{self._pick(OPENERS)} {track_phrase(first)}."

@@ -166,6 +166,12 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   check** that switches every 3 s between both speakers the same and the
   right one inverted: if the inverted part sounds fuller, one speaker is
   wired the wrong way round (vocals then vanish in stereo but not in mono).
+- **Artist radio** card: play one artist only -- the DJ then calls the
+  station after them ("welcome to Beatles Radio"; a leading "The" is
+  dropped) and so does the page. On air, the song already lined up next
+  still plays first. Saved as `broadcast_artist` (and in the settings
+  file); if the library has nothing by that artist it plays everything.
+  `GET /api/artists`, `POST /api/station {"artist": "The Beatles" | null}`.
 - **Knob switch** card (and the real knob): a tap pauses/plays; **holding it
   3 s** makes the radio beep and then say its network address digit by
   digit, twice, and its `.local` name -- or that it isn't connected. For

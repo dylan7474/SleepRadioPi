@@ -26,6 +26,7 @@ from sleepradiopi.audio import pcm
 from sleepradiopi.audio.eq import Equalizer, clamp
 from sleepradiopi.audio.testsignal import KINDS, TestSignal
 from sleepradiopi.config.atomic import write_atomic
+from sleepradiopi.config.settings import save_setting
 
 log = logging.getLogger(__name__)
 
@@ -268,14 +269,8 @@ class SpeakerControl:
 
     def _save_setting(self, key: str, value) -> None:
         """Set one key in the config file, keeping the others as they are."""
-        if self.config_file is None:
-            return
-        try:
-            conf = json.loads(self.config_file.read_text())
-        except (OSError, ValueError):
-            conf = {}
-        conf[key] = value
-        write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")
+        if self.config_file is not None:
+            save_setting(self.config_file, key, value)
 
     def step(self, delta: int) -> None:
         self.set_volume(self.speaker.volume + delta)
