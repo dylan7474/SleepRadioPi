@@ -103,3 +103,33 @@ def test_switching_the_eq_doesnt_click() -> None:
     y = np.concatenate(out)
     # no step bigger than the sine itself makes (a click was 10x that)
     assert np.max(np.abs(np.diff(y[:, 0]))) < 1.2 * np.max(np.abs(np.diff(x[:, 0])))
+
+
+def test_low_cut_rolls_off_the_deep_bass() -> None:
+    eq = Equalizer(RATE, 2, highpass=140)
+    assert abs(_level_db(eq, 1000)) < 0.3
+    assert abs(_level_db(eq, 140) + 3) < 1          # -3 dB at the corner
+    assert _level_db(eq, 70) < -20                   # 24 dB/octave below it
+    assert abs(_level_db(eq, 400)) < 0.5
+
+
+def test_low_cut_leaves_room_for_the_bass_boost() -> None:
+    # With the low cut the bass shelf peaks lower, so less overall level is given up.
+    boosted = Equalizer(RATE, 2, {"bass": 8})
+    with_cut = Equalizer(RATE, 2, {"bass": 8}, highpass=140)
+    assert _level_db(with_cut, 3000) > _level_db(boosted, 3000) + 1
+    assert _level_db(with_cut, 60) < _level_db(boosted, 60) - 10
+
+
+def test_control_sets_and_saves_the_low_cut(tmp_path: Path) -> None:
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    spk = SpeakerOutput(command=["sh", "-c", "cat > /dev/null"], eq=Equalizer(RATE, 2))
+    ctl = SpeakerControl(spk, lambda: None, lambda: None, config_file=conf)
+    assert ctl.status()["highpass_hz"] == 0
+    ctl.set_highpass(140)
+    ctl.set_eq({"bass": 3})                          # the EQ keeps the low cut
+    assert spk.eq.highpass == 140 and ctl.status()["highpass_hz"] == 140
+    assert load(conf).speaker_highpass_hz == 140
+    ctl.set_highpass(0)
+    assert load(conf).speaker_highpass_hz == 0 and spk.eq._spectrum is not None   # bass 3 still on

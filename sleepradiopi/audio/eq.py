@@ -9,6 +9,11 @@ FFT (overlap-save). A new setting only rebuilds the filter; the next block
 is played through both the old and the new filter and crossfaded, because
 swapping a long filter mid-stream clicks.
 
+An optional low cut (a 4th-order Butterworth high-pass, 24 dB/octave) keeps
+the lowest bass out of the speakers. With the box's bass port it goes just
+below the port's note (~140 Hz for 160 Hz): below that a ported box stops
+holding the cones back, and the bass EQ would only make them flap.
+
 The filter delays the speaker by TAPS // 2 samples (~23 ms), always, even
 when flat (then it's only a delay, no FFTs), so switching the EQ on or off
 never makes the audio jump. On a Zero 2 W a non-flat EQ costs ~9% of one
@@ -26,6 +31,7 @@ import numpy as np
 TAPS = 2047                 # odd, so the delay is a whole number of samples
 NFFT = 4096                 # holds TAPS - 1 frames of history + a block of up to 2050
 MAX_DB = 12
+MAX_HIGHPASS_HZ = 300
 
 BANDS = {                   # name: (kind, frequency Hz)
     "bass": ("lowshelf", 120.0),
@@ -59,7 +65,7 @@ def _biquad(kind: str, f0: float, db: float, rate: int) -> tuple[np.ndarray, np.
     return np.array(b), np.array(a)
 
 
-def response(gains: dict, rate: int, freqs: np.ndarray) -> np.ndarray:
+def response(gains: dict, rate: int, freqs: np.ndarray, highpass: float = 0) -> np.ndarray:
     """The EQ's gain (linear magnitude) at each frequency, before headroom."""
     z1 = np.exp(-2j * np.pi * freqs / rate)          # z^-1 on the unit circle
     mag = np.ones(len(freqs))
@@ -68,6 +74,9 @@ def response(gains: dict, rate: int, freqs: np.ndarray) -> np.ndarray:
         if db:
             b, a = _biquad(kind, f0, db, rate)
             mag *= np.abs((b[0] + b[1] * z1 + b[2] * z1 ** 2) / (a[0] + a[1] * z1 + a[2] * z1 ** 2))
+    if highpass:
+        with np.errstate(divide="ignore"):
+            mag *= 1 / np.sqrt(1 + (highpass / freqs) ** 8)   # 0 at DC
     return mag
 
 
@@ -78,25 +87,33 @@ def clamp(gains: dict) -> dict:
 class Equalizer:
     """process() takes and returns float32 blocks shaped (frames, channels)."""
 
-    def __init__(self, rate: int, channels: int, gains: dict | None = None) -> None:
+    def __init__(self, rate: int, channels: int, gains: dict | None = None,
+                 highpass: float = 0) -> None:
         self.rate = rate
         self._history = np.zeros((TAPS - 1, channels), dtype=np.float32)
         self._lock = threading.Lock()
         self._spectrum = self._playing = None      # None = flat
-        self.set(gains or {})
+        self.highpass = 0
+        self.set(gains or {}, highpass)
         self._playing = self._spectrum             # nothing to fade from at the start
 
-    def set(self, gains: dict) -> None:
+    def set(self, gains: dict, highpass: float | None = None) -> None:
+        """New band gains (dB) and, if given, the low cut in Hz (0 = off)."""
         gains = clamp(gains)
+        if highpass is None:
+            highpass = self.highpass
+        highpass = int(max(0, min(MAX_HIGHPASS_HZ, highpass)))
         spectrum = None
-        if any(gains.values()):
+        if any(gains.values()) or highpass:
             freqs = np.fft.rfftfreq(NFFT, 1 / self.rate)
-            mag = response(gains, self.rate, freqs) * 10 ** (-max(0, *gains.values()) / 20)
+            mag = response(gains, self.rate, freqs, highpass)
+            mag /= max(1.0, mag.max())                 # headroom for the biggest boost
             h = np.fft.irfft(mag, NFFT)                # zero phase: centred on sample 0
             h = np.roll(h, TAPS // 2)[:TAPS] * np.hanning(TAPS)
             spectrum = np.fft.rfft(h, NFFT)[:, None]
         with self._lock:
             self.gains = gains
+            self.highpass = highpass
             self._spectrum = spectrum
 
     def reset(self) -> None:

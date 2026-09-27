@@ -238,6 +238,20 @@ class SpeakerControl:
             self._save_setting("speaker_eq", new)
         log.info("speaker EQ: %s", new)
 
+    def set_highpass(self, hz: float) -> None:
+        """Low cut for the speaker in Hz (0 = off), e.g. ~140 Hz with the
+        bass port. Heard at once, and saved in the config."""
+        eq = self.speaker.eq
+        if eq is None:
+            return
+        with self._lock:
+            before = eq.highpass
+            eq.set(eq.gains, hz)
+            if eq.highpass == before:
+                return
+            self._save_setting("speaker_highpass_hz", eq.highpass)
+        log.info("speaker low cut: %s", f"{eq.highpass} Hz" if eq.highpass else "off")
+
     def _save_setting(self, key: str, value) -> None:
         """Set one key in the config file, keeping the others as they are."""
         if self.config_file is None:
@@ -312,4 +326,5 @@ class SpeakerControl:
             status["sleep_left_s"] = max(0, round(end - time.monotonic()))
         if self.speaker.eq is not None:
             status["eq"] = dict(self.speaker.eq.gains)
+            status["highpass_hz"] = self.speaker.eq.highpass
         return status

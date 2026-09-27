@@ -56,7 +56,8 @@ def main() -> None:
     speaker = control = None
     if settings.speaker_enabled:
         speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono,
-                                eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq))
+                                eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
+                                             settings.speaker_highpass_hz))
         station = Station(cfg, tts, TeeOutput(speaker, stream))
         control = SpeakerControl(
             speaker, station.listener_joined, station.listener_left,

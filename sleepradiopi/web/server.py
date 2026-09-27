@@ -151,6 +151,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     speaker.set_mono(settings["speaker_mono"])
                 if "speaker_eq" in settings:
                     speaker.set_eq(settings["speaker_eq"])
+                if "speaker_highpass_hz" in settings:
+                    speaker.set_highpass(settings["speaker_highpass_hz"])
                 if volume is not None:
                     if volume != speaker.volume:
                         changed.add("volume")
@@ -170,7 +172,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
             {"pause": true | false | "toggle"}, {"sleep": minutes (0 = off)},
             {"mono": true | false} or
-            {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three).
+            {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three) or
+            {"highpass": Hz} (the low cut; 0 = off).
             Replies with the speaker's status."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -189,6 +192,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             and not isinstance(v, bool) for k, v in eq.items()):
                         raise ValueError("eq must map bass/mid/treble to numbers")
                     speaker.set_eq(eq)
+                if "highpass" in body:
+                    hz = body["highpass"]
+                    if isinstance(hz, bool) or not isinstance(hz, (int, float)) or not 0 <= hz <= 300:
+                        raise ValueError("highpass must be 0-300 Hz")
+                    speaker.set_highpass(hz)
                 if "sleep" in body:
                     minutes = body["sleep"]
                     if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) \

@@ -154,12 +154,14 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   (`speaker_eq`). The MiniAmp has no EQ of its own, so it's done in software
   (`audio/eq.py`: one linear-phase FIR from the three biquads, FFT per block,
   ~11% of one Zero 2 W core when not flat); boosts lower the overall level
-  so they can't clip.
+  so they can't clip. Its **Low cut** (`speaker_highpass_hz`, a 24 dB/octave
+  high-pass: Off / 100-160 Hz) keeps the deepest bass out of the small
+  speakers; use ~140 Hz with the case's bass port back panel.
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
 - `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
   `{"pause": true | false | "toggle"}` (the knob's controls, for testing),
   `{"sleep": minutes}` (0 = off; not kept over a restart) or
-  `{"mono": true | false}` or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
+  `{"mono": true | false}`, `{"highpass": Hz}` or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
   (any of the bands; both saved in the config).
 - **Settings** card: *Save settings* downloads the settings and the speaker
   volume as one JSON file (`GET /api/settings`); *Load settings* sends one

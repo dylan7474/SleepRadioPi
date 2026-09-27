@@ -123,8 +123,17 @@
     <div class="row"><label for="eq-treble">Treble</label>
       <input id="eq-treble" data-band="treble" type="range" min="-12" max="12" step="1" value="0">
       <output id="eq-trebleNum" class="muted">0 dB</output></div>
+    <div id="lowcut" class="row seg" role="group" aria-label="Low cut">
+      <label>Low cut</label>
+      <button type="button" data-hz="0" aria-pressed="true">Off</button>
+      <button type="button" data-hz="100" aria-pressed="false">100</button>
+      <button type="button" data-hz="120" aria-pressed="false">120</button>
+      <button type="button" data-hz="140" aria-pressed="false">140</button>
+      <button type="button" data-hz="160" aria-pressed="false">160 Hz</button>
+    </div>
     <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
-      A boost lowers the overall level a little, so it can't distort.</p>
+      A boost lowers the overall level a little, so it can't distort. With the bass port
+      back panel, set the low cut to 140 Hz.</p>
   </section>
 
   <section class="card">
@@ -248,6 +257,18 @@ function queueEq() {
 BANDS.forEach(b => $("eq-" + b).oninput = e => { eq = { ...eq, [b]: parseInt(e.target.value, 10) }; queueEq(); });
 $("eqFlat").onclick = () => { eq = { bass: 0, mid: 0, treble: 0 }; queueEq(); };
 
+// Low cut (Hz, 0 = off): keeps the deepest bass out of the small speakers.
+let lowcut = 0, lowcutSent = 0;
+const showLowcut = () => document.querySelectorAll("#lowcut button")
+  .forEach(b => b.setAttribute("aria-pressed", String(b.dataset.hz === String(lowcut))));
+document.querySelectorAll("#lowcut button").forEach(b => b.onclick = () => {
+  lowcut = parseInt(b.dataset.hz, 10);
+  lowcutSent = Date.now();
+  showLowcut();
+  fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ highpass: lowcut }) }).catch(() => {});
+});
+
 // Sleep timer. With a speaker the radio runs it (it fades the speaker over
 // the last minute, then pauses it) and this page follows it, so it keeps
 // going when the phone locks and every page shows the same countdown. This
@@ -302,6 +323,11 @@ async function poll() {
         BANDS.some(b => s.speaker.eq[b] !== eq[b])) {
       eq = { ...s.speaker.eq };
       showEq();
+    }
+    if (hasSpeaker && Date.now() - lowcutSent > 2000 && s.speaker.highpass_hz !== undefined &&
+        s.speaker.highpass_hz !== lowcut) {
+      lowcut = s.speaker.highpass_hz;
+      showLowcut();
     }
     if (hasSpeaker && Date.now() - modeSent > 2000 && s.speaker.mono !== mono) {
       mono = s.speaker.mono;
@@ -371,7 +397,7 @@ $("settingsFile").onchange = async e => {
     settingsNote(reply.restarting ? "Loaded. The radio is restarting to use them; back in about 20 seconds."
                : reply.needs_restart ? "Loaded. Some take effect the next time the radio starts."
                : reply.changed.length ? "Loaded." : "Loaded. They were the same as the radio's already.");
-    lastInput = eqInput = modeSent = 0;   // let the page follow the new volume, EQ and mode
+    lastInput = eqInput = modeSent = lowcutSent = 0;   // let the page follow the new volume, EQ and mode
     poll();
   } catch {
     settingsNote("Couldn't reach the radio. Try again?", true);

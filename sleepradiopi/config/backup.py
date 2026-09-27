@@ -32,7 +32,7 @@ VERSION = 1
 LOCAL = {"music_folder", "jingles_folder", "voices_folder", "hooks_file", "http_port",
          "speaker_enabled", "speaker_device", "gpio_pin_mapping", "lcd_panel_type"}
 # Applied while the station runs; any other change needs a restart.
-LIVE = {"speaker_mono", "speaker_eq"}
+LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz"}
 
 CHOICES = {
     "broadcast_voice": {None, "stock", "personal"},
@@ -49,6 +49,7 @@ RANGES = {
     "listener_grace_s": (0, 3600),
     "speaker_volume": (0, 100),
     "knob_step": (1, 20),
+    "speaker_highpass_hz": (0, 300),
 }
 SHARED = [f for f in fields(Settings) if f.name not in LOCAL]
 
