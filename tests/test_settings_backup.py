@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -123,6 +124,10 @@ def test_web_load_restarts_only_when_supervised(radio, monkeypatch) -> None:
     assert reply["needs_restart"] and not reply["restarting"] and not restarts
     monkeypatch.setenv(server_mod.RESTART_ENV, "1")
     reply = _load(base, json.dumps(_file(news_speed=1.1)).encode())
+    # the restart is requested just after the reply is sent: wait for it
+    deadline = time.monotonic() + 2
+    while not restarts and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert reply["restarting"] and restarts == [1]
     saved = json.loads(conf.read_text())
     assert saved["news_enabled"] is False and saved["music_folder"] == "/media/music"
