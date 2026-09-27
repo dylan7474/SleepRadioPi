@@ -84,6 +84,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._save_settings()
             elif path == "/api/birthdays":
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
+            elif path == "/api/dj":
+                self._send(json.dumps(self._dj_state()).encode(), "application/json")
             elif path == "/api/search":
                 q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
                 self._send(json.dumps({"results": station.search(q)}).encode(), "application/json")
@@ -116,6 +118,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_profiles()
             elif path == "/api/request":
                 self._request()
+            elif path == "/api/dj":
+                self._set_dj()
             elif path == "/api/birthdays/hear":
                 self._hear_birthday()
             else:
@@ -171,6 +175,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self.wfile.write(body)
                 return
             changed = backup.apply(config_file, settings)     # before the live ones save theirs
+            dj_keys = {"broadcast_chattiness", "broadcast_dj_hooks", "broadcast_jingle_enabled",
+                       "broadcast_jingle_every", "news_enabled"}
+            if changed & dj_keys:
+                every = settings.get("broadcast_jingle_every", station.config.jingle_every or 4)
+                station.set_dj(chattiness=settings.get("broadcast_chattiness"),
+                               dj_hooks=settings.get("broadcast_dj_hooks"),
+                               jingle_every=every if settings.get("broadcast_jingle_enabled", True) else 0,
+                               news_enabled=settings.get("news_enabled"))
             if "profiles" in changed:
                 station.set_profiles(settings["profiles"])
             if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
@@ -283,6 +295,52 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             found = station.set_profile(value) if kind == "profile" else station.set_artist(value)
             self._save_selection()
             self._send(json.dumps({"found": found, **self._selection()}).encode(), "application/json")
+
+        def _dj_state(self) -> dict:
+            return {**station.dj_settings(), "can_restart": bool(os.environ.get(RESTART_ENV))}
+
+        def _set_dj(self) -> None:
+            """POST /api/dj with any of {"voice", "chattiness", "dj_hooks",
+            "jingle_every" (0 = off), "news_enabled"}. All saved; all live except
+            the voice, which restarts the station (only one voice fits in RAM)."""
+            try:
+                body = self._body()
+                if not isinstance(body, dict):
+                    raise ValueError("send a JSON object")
+                for key in ("dj_hooks", "news_enabled"):
+                    if key in body and not isinstance(body[key], bool):
+                        raise ValueError(f"{key} must be true or false")
+                every = body.get("jingle_every")
+                if every is not None and (isinstance(every, bool) or not isinstance(every, int)):
+                    raise ValueError("jingle_every must be a number")
+                voice = body.get("voice")
+                if voice is not None and voice not in station.voices():
+                    raise ValueError(f"no voice called {voice!r}")
+                station.set_dj(chattiness=body.get("chattiness"), dj_hooks=body.get("dj_hooks"),
+                               jingle_every=every, news_enabled=body.get("news_enabled"))
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e))
+                return
+            restarting = False
+            if config_file is not None:
+                if "chattiness" in body:
+                    save_setting(config_file, "broadcast_chattiness", station.chattiness)
+                if "dj_hooks" in body:
+                    save_setting(config_file, "broadcast_dj_hooks", body["dj_hooks"])
+                if every is not None:
+                    save_setting(config_file, "broadcast_jingle_enabled", every > 0)
+                    if every > 0:
+                        save_setting(config_file, "broadcast_jingle_every", every)
+                if "news_enabled" in body:
+                    save_setting(config_file, "news_enabled", body["news_enabled"])
+                if voice is not None and voice != station.dj_voice:
+                    save_setting(config_file, "broadcast_voice", voice)
+                    restarting = bool(os.environ.get(RESTART_ENV))
+                    log.info("voice changed to %s from %s", voice, self.address_string())
+            self._send(json.dumps({**self._dj_state(), "saved_voice": voice or station.dj_voice,
+                                   "restarting": restarting}).encode(), "application/json")
+            if restarting:
+                _restart_soon(speaker)
 
         def _request(self) -> None:
             """POST /api/request {"id": n} (from /api/search): play that track next."""

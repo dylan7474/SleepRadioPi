@@ -120,7 +120,7 @@ def test_web_load_applies_live_settings_without_a_restart(radio, monkeypatch) ->
 def test_web_load_restarts_only_when_supervised(radio, monkeypatch) -> None:
     base, _, conf, restarts = radio
     monkeypatch.delenv(server_mod.RESTART_ENV, raising=False)
-    reply = _load(base, json.dumps(_file(news_enabled=False)).encode())
+    reply = _load(base, json.dumps(_file(broadcast_announcer_speed=0.9)).encode())   # needs a restart
     assert reply["needs_restart"] and not reply["restarting"] and not restarts
     monkeypatch.setenv(server_mod.RESTART_ENV, "1")
     reply = _load(base, json.dumps(_file(news_speed=1.1)).encode())
@@ -130,7 +130,7 @@ def test_web_load_restarts_only_when_supervised(radio, monkeypatch) -> None:
         time.sleep(0.01)
     assert reply["restarting"] and restarts == [1]
     saved = json.loads(conf.read_text())
-    assert saved["news_enabled"] is False and saved["music_folder"] == "/media/music"
+    assert saved["broadcast_announcer_speed"] == 0.9 and saved["music_folder"] == "/media/music"
 
 
 def test_web_load_rejects_a_bad_file_and_changes_nothing(radio) -> None:

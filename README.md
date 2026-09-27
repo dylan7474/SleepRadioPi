@@ -41,7 +41,41 @@ and with no network, and is set up from its web page. See
   music are read-only, and settings are saved atomically (temp file, fsync,
   rename), so a power cut can't leave a half-written file.
 
-## Hardware
+## How it sounds
+
+The work that makes it sound like a real station, most of it ported from
+SleepRadio:
+
+- **Every track at the same loudness.** Each track is measured (the first
+  two minutes' loudness, once, then cached) and turned up or down to a
+  common level (~-19 dBFS), within 0.2×–4× and with a soft limit so a boost
+  can't clip. No reaching for the knob between a quiet folk song and a
+  loud rock one.
+- **No dead air.** Silence at the start (0.3–5 s) and end (0.4–25 s) of
+  tracks is trimmed, so the DJ comes in as the song ends.
+- **A presenter, fully offline.** Neural text-to-speech (sherpa-onnx) in
+  the stock voice or your own cloned one, with a broadcast voice EQ
+  (high-pass at 120 Hz, less boom at 250 Hz, presence at 3.5 kHz, a little
+  air) and levelled to sit with the music. It speaks a clause at a time with
+  natural pauses, and every line is made while the previous song plays, so
+  there's never a wait.
+- **Real links.** Back-announcements and intros ("That was…", "Coming
+  up…"), 70s-style DJ hooks, station idents, a greeting for the time of day,
+  and time checks worded for the moment they'll actually be spoken (twice as
+  often in the morning; a skip re-words them). How often the DJ talks is up
+  to you.
+- **A proper shuffle.** No repeat within the last ~20 tracks, and the same
+  artist is spaced out.
+- **Jingles** from a shuffled bag (never the same one twice in a row); a
+  short one opens the show. Only on the main mix, since they say "Sleep
+  Radio".
+- **News** — BBC News bulletins at :00 (top stories) and :30 (softer
+  stories), read with a time line for when they're read, and none in the
+  night-time quiet hours.
+- **It plays when someone's listening.** The show starts for the speaker (or
+  the first browser) and stops 30 s after the last listener goes; pressing
+  play again within that carries on live.
+
 
 | Part | Notes |
 |---|---|
@@ -145,7 +179,9 @@ Most of these are set from the web page; the rest are in the config file.
 | `broadcast_artist` / `broadcast_profile` | `null` | Artist radio, or one of your `profiles` (lists of artists); `null` = everything. |
 | `profiles` | `[]` | `[{"name": "Friday List", "artists": [...]}]` |
 | `birthdays` | `[]` | `[{"name", "day", "month", "year"?}]` |
-| `broadcast_chattiness`, `broadcast_jingle_every`, `broadcast_dj_hooks`, `news_enabled`, `news_quiet_hours`, ... | | See `sleepradiopi/config/settings.py`. |
+| `broadcast_chattiness` | `"maximum"` | `maximum` (a link before every song), `chatty`, `balanced`, `minimal` (every 5). |
+| `broadcast_dj_hooks`, `broadcast_jingle_enabled` / `broadcast_jingle_every`, `news_enabled` | on, on / 4, on | The DJ card sets these. |
+| `broadcast_announcer_speed`, `broadcast_announcer_volume`, `news_speed`, `news_quiet_hours`, ... | | Config file only for now; see `sleepradiopi/config/settings.py`. |
 
 The "is the clock right?" check reads `SLEEPRADIOPI_CLOCK_FLAG`: a file that
 exists once the time is known (the appliance creates `/run/time-synced` when
@@ -173,6 +209,11 @@ when the station has one.
   already lined up next still plays first. If the library has nothing for
   the choice, it plays everything. The jingles say "Sleep Radio", so they
   only play on the main mix (all artists).
+- **The DJ** — the voice (your voice packs; changing it restarts the radio,
+  about a minute, because only one voice fits in a Zero 2 W's memory), how
+  often it talks (before every song, or every 2, 3 or 5), 70s hooks on/off,
+  jingles (off or every 2–8 songs) and news on/off. All but the voice are
+  heard from the next gap.
 - **Birthdays** — starts empty; add a name, day and month, and optionally
   the year born. On the day, once the clock is known and outside the news
   quiet hours, the DJ wishes them a happy birthday first thing in a gap
@@ -222,6 +263,7 @@ All JSON. What the page uses, for scripts and testing:
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "phase" \| "stop"}` |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
+| `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled"}` |
 | `GET /api/search?q=` | Up to 40 tracks matching every word (title, artist, album), each with an `id` |
 | `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |

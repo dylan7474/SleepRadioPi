@@ -64,6 +64,10 @@
   #artistRadio { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
             border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .6rem; }
   #artistRadio:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #dj select { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: .5rem; padding: .4rem .5rem; }
+  #dj .row label { width: 6.5rem; flex: none; }
+  #djNote.bad { color: var(--live); }
   #q { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
        border-radius: .6rem; padding: .55rem .7rem; }
   #q:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -161,6 +165,33 @@
         <button id="listDelete" type="button" hidden>Delete list</button>
       </div>
     </div>
+  </section>
+
+  <section id="dj" class="card" hidden>
+    <h2>The DJ</h2>
+    <div class="row" style="margin-top:0"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
+    <div class="row seg" id="djChat" role="group" aria-label="How chatty">
+      <label>Talks</label>
+      <button type="button" data-v="maximum" title="A link before every song">Every song</button>
+      <button type="button" data-v="chatty" title="A link every 2 songs">Every 2</button>
+      <button type="button" data-v="balanced" title="A link every 3 songs">Every 3</button>
+      <button type="button" data-v="minimal" title="A link every 5 songs">Every 5</button>
+    </div>
+    <div class="row seg" id="djHooks" role="group" aria-label="70s DJ hooks">
+      <label>70s hooks</label>
+      <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+    </div>
+    <div class="row" id="djJingleRow"><label for="djJingles">Jingles</label><select id="djJingles">
+      <option value="0">Off</option><option value="2">Every 2 songs</option><option value="3">Every 3 songs</option>
+      <option value="4">Every 4 songs</option><option value="5">Every 5 songs</option>
+      <option value="6">Every 6 songs</option><option value="8">Every 8 songs</option></select></div>
+    <div class="row seg" id="djNews" role="group" aria-label="News bulletins">
+      <label>News</label>
+      <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+    </div>
+    <p id="djNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Changes are heard from the next gap
+      between songs. Jingles only play on the main mix (all artists). Changing the voice restarts the radio
+      (about a minute): only one voice fits in its memory.</p>
   </section>
 
   <section id="bd" class="card">
@@ -563,6 +594,53 @@ function showRequests(list) {
   }));
 }
 
+// The DJ: voice, how often it talks, 70s hooks, jingles, news.
+function djNote(text, bad) { $("djNote").textContent = text; $("djNote").classList.toggle("bad", !!bad); }
+function pressSeg(id, value) {
+  document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === String(value))));
+}
+function showDj(d) {
+  $("dj").hidden = false;
+  const v = $("djVoice");
+  v.replaceChildren(...d.voices.map(n => new Option(n[0].toUpperCase() + n.slice(1), n)));
+  if (d.voice && !d.voices.includes(d.voice)) v.append(new Option(d.voice, d.voice));
+  v.value = d.voice || "";
+  v.disabled = d.voices.length < 2;
+  pressSeg("djChat", d.chattiness);
+  pressSeg("djHooks", d.dj_hooks);
+  $("djHooks").hidden = !d.hooks_available;
+  const j = $("djJingles");
+  if (![...j.options].some(o => +o.value === d.jingle_every)) j.append(new Option(`Every ${d.jingle_every} songs`, d.jingle_every));
+  j.value = String(d.jingle_every);
+  $("djJingleRow").hidden = !d.jingles_available;
+  pressSeg("djNews", d.news_enabled);
+}
+async function loadDj() {
+  try { showDj(await (await fetch("/api/dj", { cache: "no-store" })).json()); } catch {}
+}
+async function setDj(change, done) {
+  try {
+    const r = await fetch("/api/dj", { method: "POST", headers: { "Content-Type": "application/json" },
+                                       body: JSON.stringify(change) });
+    const reply = await r.json();
+    if (!r.ok) { djNote("Not changed: " + reply.error + ".", true); loadDj(); return; }
+    showDj(reply);
+    if (reply.restarting) { $("djVoice").value = reply.saved_voice; djNote("The radio is restarting with the new voice; back in about a minute."); }
+    else if ("voice" in change) djNote("Saved: the new voice is used the next time the radio starts.");
+    else djNote(done);
+  } catch { djNote("Couldn't reach the radio.", true); }
+}
+$("djVoice").onchange = e => {
+  if (!confirm(`Change the DJ's voice to “${e.target.value}”?\n\nThe radio restarts (about a minute).`)) { loadDj(); return; }
+  setDj({ voice: e.target.value });
+};
+const CHAT = { maximum: "before every song", chatty: "every 2 songs", balanced: "every 3 songs", minimal: "every 5 songs" };
+document.querySelectorAll("#djChat button").forEach(b => b.onclick = () => setDj({ chattiness: b.dataset.v }, `The DJ now talks ${CHAT[b.dataset.v]}.`));
+document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setDj({ dj_hooks: b.dataset.v === "true" }, `70s hooks ${b.textContent.toLowerCase()}.`));
+$("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
+document.querySelectorAll("#djNews button").forEach(b => b.onclick = () => setDj({ news_enabled: b.dataset.v === "true" }, `News ${b.textContent.toLowerCase()}.`));
+loadDj();
+
 // Birthdays: kept on the radio (and in the saved settings file).
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
                 "September", "October", "November", "December"];
@@ -807,7 +885,7 @@ $("settingsFile").onchange = async e => {
                : reply.needs_restart ? "Loaded. Some take effect the next time the radio starts."
                : reply.changed.length ? "Loaded." : "Loaded. They were the same as the radio's already.");
     lastInput = eqInput = modeSent = lowcutSent = 0;   // let the page follow the new volume, EQ and mode
-    poll(); loadBirthdays(); loadArtists();   // (lists come with the artists)
+    poll(); loadBirthdays(); loadArtists(); loadDj();   // (lists come with the artists)
   } catch {
     settingsNote("Couldn't reach the radio. Try again?", true);
   }

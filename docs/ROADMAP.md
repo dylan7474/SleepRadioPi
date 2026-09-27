@@ -48,17 +48,21 @@ modules stay in the tree until that's decided.
 14. **Artist radio and lists** — play one artist ("Beatles Radio") or your
     own named lists of artists ("Friday List on Sleep Radio").
 15. **Birthdays** — the DJ wishes people a happy birthday on the day.
-16. **Play next** — search the library from the page and queue songs; the
+16. **DJ settings on the page** — voice, how often the DJ talks, 70s hooks,
+    jingles and news.
+17. **Play next** — search the library from the page and queue songs; the
     DJ introduces them. Jingles only on the main mix.
 
 ## Next
 
-17. **Wire the knob and the RTC** — check the knob's direction and step and
+18. **Wire the knob and the RTC** — check the knob's direction and step and
     the long press on the real switch; the RTC with no network.
-18. **More settings on the page** — voice, chattiness, jingles and news are
-    still set in the config file.
-19. **A lighter web side** — the browser stream off by default (it runs an
+19. **Tidier web page** — everyday controls up front and the rest behind a
+    Settings button; optional password protection (set from the page,
+    resettable over ssh). Then the DJ's speed/level and quiet hours on the
+    page too.
+20. **A lighter web side** — the browser stream off by default (it runs an
     MP3 encoder all the time).
-20. **Library tools** — copying/syncing music from the desktop library.
-21. **A needle VU meter** — a physical meter driven from a PWM pin, with the
+21. **Library tools** — copying/syncing music from the desktop library.
+22. **A needle VU meter** — a physical meter driven from a PWM pin, with the
     Android app's ballistics (see the appliance image's roadmap).

@@ -49,6 +49,7 @@ def main() -> None:
     voices = Path(settings.voices_folder or REPO / "voices").expanduser()
     cfg["hooks_file"] = str(Path(settings.hooks_file).expanduser() if settings.hooks_file else BUNDLED_HOOKS)
     cfg["scan_cache"] = Path.home() / ".cache" / "sleepradiopi" / "scans.json"
+    cfg["voices_dir"] = voices
     cfg["tag_cache"] = Path.home() / ".cache" / "sleepradiopi" / "tags.json"
 
     # One voice only: two don't fit a Pi Zero 2 W's RAM alongside the stream.

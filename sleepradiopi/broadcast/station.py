@@ -146,10 +146,12 @@ class Station:
         self.output = output
         self.scans = pcm.ScanCache(cfg["scan_cache"])
 
-        hooks = None
-        if self.config.dj_hooks_enabled and cfg["hooks_file"] and Path(cfg["hooks_file"]).is_file():
-            hooks = HookPool(parse_hooks(Path(cfg["hooks_file"]).read_text()))
-        self.builder = DjScriptBuilder(hooks=hooks)
+        self.chattiness = chattiness.ident
+        self.voices_dir: Path | None = cfg.get("voices_dir")
+        self._hook_pool = None                # loaded even when off, so they can be turned on
+        if cfg["hooks_file"] and Path(cfg["hooks_file"]).is_file():
+            self._hook_pool = HookPool(parse_hooks(Path(cfg["hooks_file"]).read_text()))
+        self.builder = DjScriptBuilder(hooks=self._hook_pool if self.config.dj_hooks_enabled else None)
         self.news_schedule = NewsSchedule(
             QuietHours.of_minutes(self.config.news_quiet_start_min, self.config.news_quiet_end_min)
             if self.config.news_quiet_hours else None)
@@ -505,6 +507,55 @@ class Station:
             self._jingle_bag.extend(bag)
         self._last_jingle = self._jingle_bag.popleft()
         return self._last_jingle
+
+    # --- DJ settings (the page's DJ card) -------------------------------------------------
+
+    def voices(self) -> list[str]:
+        """The voice packs in the voices folder (folders with a model.onnx)."""
+        if self.voices_dir is None or not Path(self.voices_dir).is_dir():
+            return []
+        return sorted(d.name for d in Path(self.voices_dir).iterdir() if (d / "model.onnx").is_file())
+
+    def dj_settings(self) -> dict:
+        return {"voice": self.dj_voice, "voices": self.voices(), "chattiness": self.chattiness,
+                "chattiness_options": [c.ident for c in Chattiness],
+                "dj_hooks": self.builder.hooks is not None, "hooks_available": self._hook_pool is not None,
+                "jingle_every": self.config.jingle_every, "jingles_available": self._jingles_available(),
+                "news_enabled": self.config.news_enabled}
+
+    def _jingles_available(self) -> bool:
+        if self.jingles:
+            return True
+        folder = Path(self.jingles_dir)
+        return folder.is_dir() and any(folder.iterdir())
+
+    def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
+               jingle_every: int | None = None, news_enabled: bool | None = None) -> None:
+        """Change the DJ live (from the next gap on). ValueError if a value is wrong."""
+        if chattiness is not None:
+            c = next((c for c in Chattiness if c.ident == chattiness), None)
+            if c is None:
+                raise ValueError(f"chattiness must be one of {[c.ident for c in Chattiness]}")
+            self.chattiness = c.ident
+            self.config.tracks_per_link = c.tracks_per_link
+            self.config.announce_every_track = c == Chattiness.MAXIMUM
+        if dj_hooks is not None:
+            self.builder.hooks = self._hook_pool if dj_hooks else None
+            self.config.dj_hooks_enabled = bool(dj_hooks and self._hook_pool)
+        if jingle_every is not None:
+            if not 0 <= jingle_every <= 50:
+                raise ValueError("jingles: 0 (off) to every 50 tracks")
+            if jingle_every and not self.jingles:     # off at start-up: find them now
+                self.jingles = scan_jingles(self.jingles_dir)
+                self._jingle_paths = {j.path for j in self.jingles}
+                for j in self.jingles:
+                    self._scan(j.path)
+            self.config.jingle_every = jingle_every
+            self._tracks_since_jingle = 0
+        if news_enabled is not None:
+            self.config.news_enabled = bool(news_enabled)
+        log.info("DJ: chattiness %s, hooks %s, jingles every %s, news %s", self.chattiness,
+                 self.builder.hooks is not None, self.config.jingle_every or "off", self.config.news_enabled)
 
     @property
     def main_mix(self) -> bool:

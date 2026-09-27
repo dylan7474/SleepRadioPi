@@ -31,7 +31,8 @@ def _station(tmp_path: Path, **cfg_extra) -> station_mod.Station:
             (d / f"0{n} - {song}.mp3").write_bytes(b"x")
     cfg = asdict(Settings())
     cfg.update(music_folder=tmp_path / "music", jingles_folder=tmp_path / "none",
-               hooks_file="", scan_cache=tmp_path / "scans.json", tag_cache=None, **cfg_extra)
+               hooks_file="", scan_cache=tmp_path / "scans.json", tag_cache=None)
+    cfg.update(cfg_extra)
     return station_mod.Station(cfg, FakeTts(), NullOutput())
 
 

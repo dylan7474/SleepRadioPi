@@ -34,7 +34,8 @@ LOCAL = {"music_folder", "jingles_folder", "voices_folder", "hooks_file", "http_
          "speaker_enabled", "speaker_device", "gpio_pin_mapping", "lcd_panel_type"}
 # Applied while the station runs; any other change needs a restart.
 LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
-        "profiles", "broadcast_profile"}
+        "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
+        "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled"}
 
 CHOICES = {
     "broadcast_voice": {None, "stock", "personal"},
