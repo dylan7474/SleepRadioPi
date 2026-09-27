@@ -13,26 +13,30 @@ logic (track selection, DJ scripts, time checks, news, loudness levelling,
 edge-silence trim, voice EQ) is ported closely, with the Android app's unit
 test cases ported alongside. See [`docs/SCOPE.md`](docs/SCOPE.md).
 
-**Status:** the station runs on a Pi Zero 2 W, starts at power-up, plays
-through the sound card and has been tested with pulled plugs and with no
-network. The HiFiBerry MiniAmp and the knob are being fitted; see
+**Status:** running every day on a Pi Zero 2 W with a HiFiBerry MiniAmp
+and two 40 mm speakers in a 3D-printed cabinet (see the
+[appliance image repo](https://github.com/dylan7474/SleepRadioPi-OS), which
+also has the case). It starts at power-up, has been tested with pulled plugs
+and with no network, and is set up from its web page. See
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## How it behaves
 
 - **Power on and it plays.** Within about 40 seconds of power-up the show
-  starts ("Hello, and welcome to Sleep Radio...") through the MiniAmp; most
+  starts ("Hello, and welcome to Sleep Radio...") through the speakers; most
   of that is the voice loading. No app, no phone, no button press.
 - **One knob.** Turn for volume (0–100 in 0.5 dB steps; the level is
-  remembered). Press to pause; press again within 30 seconds to carry on
-  live, or later to start a fresh show.
-- **Offline is normal.** A Pi has no battery-backed clock, so without the
-  internet it can't know the time. Until the clock has been set from the
-  internet (NTP) since power-up, the DJ **doesn't say the time, greets with
-  "Hello" rather than "Good evening", and there's no news**; hooks, idents,
-  track intros and jingles carry on. When Wi-Fi comes back, the clock is set
-  within seconds and time checks and news return. (A DS3231 real-time clock
-  module is being added so the time is known offline too.)
+  remembered). Press (and let go) to pause or play. **Hold it for 3 seconds**
+  and the radio beeps and reads out its network address — handy away from
+  home, where there's no screen to show where the web page is.
+- **Everything else is on its web page** (below): EQ, sleep timer, artist
+  radio and your own lists of artists, birthdays, test sounds, settings
+  backup, shut down.
+- **Offline is normal.** Until the clock is known — from the internet (NTP),
+  or from an optional DS3231 real-time clock module — the DJ **doesn't say
+  the time, greets with "Hello" rather than "Good evening", and there's no
+  news** (or birthday wishes); hooks, idents, track intros and jingles carry
+  on. When Wi-Fi comes back, time checks and news return within seconds.
 - **Pull the plug any time.** On the appliance image the system and the
   music are read-only, and settings are saved atomically (temp file, fsync,
   rename), so a power cut can't leave a half-written file.
@@ -126,92 +130,99 @@ There are two ways:
 
 ### Settings you're likely to change
 
+Most of these are set from the web page; the rest are in the config file.
+
 | Key | Default | |
 |---|---|---|
 | `speaker_enabled` | `false` | Play through the sound card from start-up (the appliance turns it on). Off by default so a desktop test run doesn't play out loud. |
 | `speaker_device` | `"default"` | ALSA device. |
 | `speaker_volume` | `30` | Volume on the very first start; after that the knob's last setting. |
+| `speaker_mono` | `false` | Both speakers play left + right mixed (the web stream stays stereo). |
+| `speaker_eq` | flat | `{"bass", "mid", "treble"}` in dB, -12 to 12. |
+| `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB). |
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
+| `broadcast_artist` / `broadcast_profile` | `null` | Artist radio, or one of your `profiles` (lists of artists); `null` = everything. |
+| `profiles` | `[]` | `[{"name": "Friday List", "artists": [...]}]` |
+| `birthdays` | `[]` | `[{"name", "day", "month", "year"?}]` |
 | `broadcast_chattiness`, `broadcast_jingle_every`, `broadcast_dj_hooks`, `news_enabled`, `news_quiet_hours`, ... | | See `sleepradiopi/config/settings.py`. |
 
 The "is the clock right?" check reads `SLEEPRADIOPI_CLOCK_FLAG`: a file that
 exists once the time is known (the appliance creates `/run/time-synced` when
 NTP sets the clock). If the variable isn't set, the clock is trusted.
 
-### Web page and API
+### The web page
 
-- **http://sleepradiopi.local/** — listen in a browser, now playing, history.
-  With a speaker, the page's volume slider sets the speaker too (same 0–100
-  scale) and follows the knob. Its sleep timer runs on the radio: it fades
-  the speaker (and the page's own stream) over the last minute, then pauses
-  the speaker; every open page shows the same countdown, and a pause from
-  the knob or the page cancels it. Its **Speakers** buttons switch the speaker
-  between stereo and mono at once and save it (`speaker_mono`); the browser
-  stream stays stereo.
-  Its **Speaker EQ** card sets bass / mid / treble (±12 dB; shelves at
-  120 Hz and 6 kHz, a peak at 1 kHz), heard at once and saved
-  (`speaker_eq`). The MiniAmp has no EQ of its own, so it's done in software
-  (`audio/eq.py`: one linear-phase FIR from the three biquads, FFT per block,
-  ~11% of one Zero 2 W core when not flat); boosts lower the overall level
-  so they can't clip. Its **Low cut** (`speaker_highpass_hz`, a 24 dB/octave
-  high-pass: Off / 100-160 Hz) keeps the deepest bass out of the small
-  speakers; use ~140 Hz with the case's bass port back panel.
-  Its **Test sound** card plays a bass sweep (40-600 Hz), a full sweep
-  (40 Hz-16 kHz, both 24 s, logarithmic, with the frequency shown live) or
-  15 s of pink noise (for a phone spectrum-analyser app) on the speaker,
-  instead of the show for a moment, at the speaker's volume with the EQ and
-  low cut bypassed -- to compare the case's back panels. Its *Speaker check*
-  row plays noise on the **left** or **right** speaker only, and a **phase
-  check** that switches every 3 s between both speakers the same and the
-  right one inverted: if the inverted part sounds fuller, one speaker is
-  wired the wrong way round (vocals then vanish in stereo but not in mono).
-- **Artist radio** card: play one artist only -- the DJ then calls the
-  station after them ("welcome to Beatles Radio"; a leading "The" is
-  dropped) and so does the page. On air, the song already lined up next
-  still plays first. Saved as `broadcast_artist` (and in the settings
-  file); if the library has nothing by that artist it plays everything.
-  `GET /api/artists`, `POST /api/station {"artist": "The Beatles" | null}`.
-- **Birthdays** card: starts empty; add a name, day and month (and
-  optionally the year born). On the day, once the clock is trusted and
-  outside the news quiet hours, the DJ wishes them a happy birthday first
-  thing in a gap between songs -- at most every 90 minutes, up to 4 times
-  ("happy forty-first birthday to Sarah" when the year is known; 29
-  February is celebrated on the 28th in other years). *Hear it* plays a
-  wish on the speaker now. Kept as `birthdays` in the config and in the
-  settings file. `GET/POST /api/birthdays`, `POST /api/birthdays/hear`.
-- **Knob switch** card (and the real knob): a tap pauses/plays; **holding it
-  3 s** makes the radio beep and then say its network address digit by
-  digit, twice, and its `.local` name -- or that it isn't connected. For
-  finding the web page away from home. The announcement is made in the
-  background once the voice has loaded and remade when the address changes,
-  so a hold answers at once; if the radio was paused it plays the
-  announcement and pauses again. `POST /api/knob {"press": "short" | "long"}`.
-- `GET /api/status` — what's on air, the library, the voice, the speaker.
-- `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
-  `{"pause": true | false | "toggle"}` (the knob's controls, for testing),
-  `{"sleep": minutes}` (0 = off; not kept over a restart) or
-  `{"mono": true | false}`, `{"highpass": Hz}`, `{"test": "bass" | "sweep" | "pink" | "left" | "right" | "phase" | "stop"}`
-  or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
-  (any of the bands; both saved in the config).
-- **Settings** card: *Save settings* downloads the settings and the speaker
-  volume as one JSON file (`GET /api/settings`); *Load settings* sends one
-  back (`POST /api/settings`), e.g. after re-flashing the card or onto a
-  second radio. The file is checked before anything is written; a radio's
-  own set-up (music/voice folders, port, sound device, pins) is never saved
-  or loaded. Volume, mono and EQ change at once; any other change makes the
-  station exit with code 75 to be restarted, but only where
-  `SLEEPRADIOPI_SUPERVISED` is set (the service and the appliance image set
-  it); otherwise it applies at the next start.
-- `POST /api/power` — shut the radio down (the page's **Shut down** button,
-  which asks first). The station isn't root, so it only creates the file
-  named by `SLEEPRADIOPI_POWER_REQUEST`; something running as root must
-  watch for it and power off (the appliance image does). Without the
-  variable there's no button, and the API answers 404.
+**http://sleepradiopi.local/** (or the address the knob reads out). No
+login: it's meant for a home network. Cards that need a speaker only appear
+when the station has one.
 
-No login: it's meant for a home network. Once the speaker is the main
-output, the plan is a small status/settings page and the browser stream off
-by default (see the roadmap).
+- **Now playing** with a progress bar, what's next, and **Skip**.
+- **Tune in** to listen in the browser (an MP3 stream of the same show).
+- **Artist radio** — play one artist only: the DJ then calls the station
+  after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
+  so do the page heading and tab. **Lists…** makes your own named lists of
+  artists (e.g. a "Friday List"; find and tick artists), which appear in the
+  same dropdown ("welcome to Friday List on Sleep Radio"). On air, the song
+  already lined up next still plays first. If the library has nothing for
+  the choice, it plays everything.
+- **Birthdays** — starts empty; add a name, day and month, and optionally
+  the year born. On the day, once the clock is known and outside the news
+  quiet hours, the DJ wishes them a happy birthday first thing in a gap
+  between songs, at most every 90 minutes and up to 4 times ("happy
+  forty-first birthday to Sarah" when the year is known; 29 February is
+  celebrated on the 28th in other years). *Hear it* plays a wish now.
+- **Volume** — the same 0–100 scale as the knob, and it follows the knob.
+  **Speakers: Stereo / Mono** switches at once. **Sleep timer** (15 min to
+  1½ h) runs on the radio: it fades the speakers (and the page's own stream)
+  over the last minute, then pauses; every open page shows the same
+  countdown, and a pause cancels it.
+- **Speaker EQ** — bass / mid / treble (±12 dB; shelves at 120 Hz and 6 kHz,
+  a peak at 1 kHz) and a **Low cut** (Off / 100–160 Hz, 24 dB/octave) that
+  keeps the deepest bass out of small speakers (~140 Hz with the case's bass
+  port). The MiniAmp has no EQ of its own, so it's done in software
+  (`audio/eq.py`: one linear-phase FIR from the biquads, FFT per block, ~11%
+  of one Zero 2 W core when not flat; changes are crossfaded, so no clicks).
+  Boosts lower the overall level so they can't clip.
+- **Knob switch** — works like the real knob: tap to pause/play, hold 3 s to
+  hear the address. If the radio was paused it speaks, then pauses again.
+- **Test sound** — for comparing speaker cabinets and checking wiring, on the
+  speakers instead of the show for a moment, with the EQ and low cut
+  bypassed: a **bass sweep** (40–600 Hz) and a **full sweep** (40 Hz–16 kHz),
+  24 s each with the frequency shown live, **pink noise** (for a phone
+  spectrum-analyser app), noise on the **left** or **right** speaker only,
+  and a **phase check** (every 3 s: both speakers the same, then the right
+  one inverted — if the inverted part sounds fuller, a speaker is wired the
+  wrong way round, and vocals would vanish in stereo but not in mono).
+- **Settings** — *Save settings* downloads everything above plus the volume
+  as one JSON file; *Load settings* puts it back (after re-flashing the
+  card, or onto a second radio). The file is checked before anything is
+  written, and a radio's own set-up (folders, port, sound device, pins) is
+  never saved or loaded. Most settings apply at once; others restart the
+  station (only where `SLEEPRADIOPI_SUPERVISED` is set, as the service and
+  the appliance image do; otherwise at the next start).
+- **Shut down** — turns the radio off safely before unplugging (appliance
+  image only: the station isn't root, so it creates the file named by
+  `SLEEPRADIOPI_POWER_REQUEST`, which a root service watches).
+
+### API
+
+All JSON. What the page uses, for scripts and testing:
+
+| Request | Does |
+|---|---|
+| `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "phase" \| "stop"}` |
+| `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
+| `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
+| `GET /api/artists` | Every artist with a track count, your lists, and what's playing |
+| `POST /api/station` | `{"artist": name \| null}` or `{"profile": name}` |
+| `POST /api/profiles` | `{"profiles": [{"name", "artists": [...]}]}` — replace the lists |
+| `GET` / `POST /api/birthdays` | The list (and whose birthday it is today) / `{"birthdays": [...]}` to replace it |
+| `POST /api/birthdays/hear` | `{"name", "day", "month", "year"?}` — say that wish now |
+| `GET` / `POST /api/settings` | Download the settings file / load one (400 with `{"error"}` if it's wrong) |
+| `POST /api/power` | Shut down (404 unless the appliance's watcher is there) |
+| `GET /stream` | The MP3 stream |
 
 ## Why Python
 
@@ -229,12 +240,14 @@ TTS engine statically links eSpeak-NG, which is GPL).
 
 ```
 sleepradiopi/
-  broadcast/   The station: show clock, DJ scripts, track selection, news, library scan (+ tag cache)
-  audio/       PCM via ffmpeg (decode, loudness, voice EQ); speaker.py plays through aplay with volume
+  broadcast/   The station: show clock, DJ scripts, track selection, news, library scan (+ tag cache),
+               birthdays.py (wishes on the day), profiles.py (lists of artists)
+  audio/       PCM via ffmpeg (decode, loudness, voice EQ); speaker.py (aplay, volume, mono, sleep fade),
+               eq.py (3-band EQ + low cut), testsignal.py (sweeps, noise, phase check)
   tts/         sherpa-onnx voice, run in a recycled worker process
-  web/         MP3 stream + the listen-in page + /api/status, /api/speaker
-  config/      Settings (JSON), atomic file writes, "is the clock right?"
-  io/          knob.py: the rotary encoder + push switch (Linux input events)
+  web/         MP3 stream, the web page (page.html) and the JSON API (server.py)
+  config/      Settings (JSON), atomic file writes, settings backup (backup.py), "is the clock right?"
+  io/          knob.py (rotary encoder + push switch, short/long press), announce.py (spoken address)
   data/        dj_hooks_70s.txt
   playback/    Other sources (deferred: Broadcast is the focus)
 scripts/       deploy.sh, install_service.sh, smoke_test_audio.py, dev_web.py

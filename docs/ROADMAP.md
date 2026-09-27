@@ -33,14 +33,32 @@ modules stay in the tree until that's decided.
 9. **Appliance image** — a separate Buildroot image: read-only root, data
    and music partitions, pull-the-plug tested, A/B updates over Wi-Fi.
 
+10. **The hardware** — MiniAmp fitted, two 40 mm speakers in a 3D-printed
+    cabinet (stereo, or mono for a one-speaker build); software volume from
+    the knob or the page.
+11. **Real-time clock (software)** — a DS3231 sets the clock at boot when
+    it's sensible, and is set from NTP; time checks and news work offline
+    once it's fitted (the module is being wired up).
+12. **The web page as the control panel** — stereo/mono, a 3-band EQ + low
+    cut (the MiniAmp has none), a sleep timer that fades the speakers,
+    save/load of all the settings as a file, skip, shut down, test sounds
+    (sweeps, pink noise, left/right and phase checks), and a virtual knob.
+13. **Knob long press** — hold 3 s: the radio reads out its network address
+    (or says it isn't connected), for finding the page away from home.
+14. **Artist radio and lists** — play one artist ("Beatles Radio") or your
+    own named lists of artists ("Friday List on Sleep Radio").
+15. **Birthdays** — the DJ wishes people a happy birthday on the day.
+
 ## Next
 
-10. **Fit the hardware** — solder the header, fit the MiniAmp and the knob,
-    first sound; check for underruns and tune the knob's step/direction.
-11. **Real-time clock** — a DS3231 so the time is known offline: time checks
-    and news without a network.
-12. **A smaller web side** — once the speaker is the main output: the browser
-    stream off by default (it runs an MP3 encoder all the time), and one
-    status/settings page (now playing, volume, voice, chattiness, news,
-    recent log lines) instead of editing JSON. No updates from the page.
-13. **Library tools** — copying/syncing music from the desktop library.
+16. **Wire the knob and the RTC** — check the knob's direction and step and
+    the long press on the real switch; the RTC with no network.
+17. **More settings on the page** — voice, chattiness, jingles and news are
+    still set in the config file.
+18. **Choose a song** — find a track and play it next (there's no request
+    queue yet).
+19. **A lighter web side** — the browser stream off by default (it runs an
+    MP3 encoder all the time).
+20. **Library tools** — copying/syncing music from the desktop library.
+21. **A needle VU meter** — a physical meter driven from a PWM pin, with the
+    Android app's ballistics (see the appliance image's roadmap).
