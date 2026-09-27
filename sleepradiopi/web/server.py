@@ -86,13 +86,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None):
 
         def _speaker(self) -> None:
             """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
-            or {"pause": true | false | "toggle"}. Replies with the speaker's status."""
+            {"pause": true | false | "toggle"} or {"mono": true | false}.
+            Replies with the speaker's status."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 if "volume" in body:
                     speaker.set_volume(int(body["volume"]))
                 if "step" in body:
                     speaker.step(int(body["step"]))
+                if "mono" in body:
+                    if not isinstance(body["mono"], bool):
+                        raise ValueError("mono must be true or false")
+                    speaker.set_mono(body["mono"])
                 if body.get("pause") == "toggle":
                     speaker.toggle()
                 elif body.get("pause") is True:

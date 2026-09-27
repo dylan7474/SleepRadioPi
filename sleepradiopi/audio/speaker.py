@@ -152,15 +152,17 @@ class SpeakerControl:
 
     The volume is remembered in state_file (saved a few seconds after the
     last change, so turning the knob doesn't write to the card every click).
-    Pause isn't remembered: the radio always plays at power-on.
+    Pause isn't remembered: the radio always plays at power-on. Mono/stereo
+    is a setting, so it's saved as speaker_mono in config_file.
     """
 
     def __init__(self, speaker: SpeakerOutput, join: Callable[[], None],
                  leave: Callable[[], None], state_file: Path | None = None,
-                 default_volume: int = 30) -> None:
+                 default_volume: int = 30, config_file: Path | None = None) -> None:
         self.speaker = speaker
         self._join, self._leave = join, leave
         self.state_file = state_file
+        self.config_file = config_file
         self.paused = True
         self._lock = threading.Lock()
         self._save_timer: threading.Timer | None = None
@@ -198,6 +200,22 @@ class SpeakerControl:
             self._save_timer.daemon = True
             self._save_timer.start()
 
+    def set_mono(self, mono: bool) -> None:
+        """Switch between mono and stereo at once, and save it in the config.
+        Other keys in the file are kept as they are."""
+        with self._lock:
+            if self.speaker.mono == mono:
+                return
+            self.speaker.mono = mono
+            if self.config_file is not None:
+                try:
+                    conf = json.loads(self.config_file.read_text())
+                except (OSError, ValueError):
+                    conf = {}
+                conf["speaker_mono"] = mono
+                write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")
+        log.info("speaker: %s", "mono" if mono else "stereo")
+
     def step(self, delta: int) -> None:
         self.set_volume(self.speaker.volume + delta)
 
@@ -226,4 +244,5 @@ class SpeakerControl:
             self.pause()
 
     def status(self) -> dict:
-        return {"volume": self.speaker.volume, "playing": not self.paused}
+        return {"volume": self.speaker.volume, "playing": not self.paused,
+                "mono": self.speaker.mono}

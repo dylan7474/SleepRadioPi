@@ -72,7 +72,7 @@ def test_control_joins_once_and_remembers_volume(tmp_path: Path, monkeypatch) ->
     state = tmp_path / "state" / "speaker.json"
     ctl = SpeakerControl(spk, lambda: calls.append("join"), lambda: calls.append("leave"),
                          state_file=state, default_volume=40)
-    assert ctl.status() == {"volume": 40, "playing": False}
+    assert ctl.status() == {"volume": 40, "playing": False, "mono": False}
     ctl.play(); ctl.play(); ctl.toggle(); ctl.toggle()
     assert calls == ["join", "leave", "join"]
     ctl.set_volume(250)

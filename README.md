@@ -143,10 +143,13 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 
 - **http://sleepradiopi.local/** — listen in a browser, now playing, history.
   With a speaker, the page's volume slider sets the speaker too (same 0–100
-  scale) and follows the knob.
+  scale) and follows the knob. Its **Speakers** buttons switch the speaker
+  between stereo and mono at once and save it (`speaker_mono`); the browser
+  stream stays stereo.
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
-- `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}` or
-  `{"pause": true | false | "toggle"}` — the knob's controls, for testing.
+- `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
+  `{"pause": true | false | "toggle"}` (the knob's controls, for testing) or
+  `{"mono": true | false}` (saved in the config).
 - `POST /api/power` — shut the radio down (the page's **Shut down** button,
   which asks first). The station isn't root, so it only creates the file
   named by `SLEEPRADIOPI_POWER_REQUEST`; something running as root must

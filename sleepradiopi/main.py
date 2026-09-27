@@ -58,7 +58,7 @@ def main() -> None:
         control = SpeakerControl(
             speaker, station.listener_joined, station.listener_left,
             state_file=Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json",
-            default_volume=settings.speaker_volume)
+            default_volume=settings.speaker_volume, config_file=args.config)
         Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle).start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:

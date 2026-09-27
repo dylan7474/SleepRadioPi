@@ -11,6 +11,7 @@
     --muted: #9c968a; --accent: #f0b44c; --accent-ink: #1a1405; --live: #e0604c;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 34rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
@@ -35,8 +36,8 @@
   .row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
   .row label { color: var(--muted); font-size: .9rem; }
   input[type=range] { flex: 1; min-width: 8rem; accent-color: var(--accent); }
-  .sleep button { padding: .35rem .7rem; font-size: .9rem; }
-  .sleep button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .sleep button, .seg button { padding: .35rem .7rem; font-size: .9rem; }
+  .sleep button[aria-pressed=true], .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   h2 { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
        margin: 0 0 .5rem; font-weight: 600; }
   ul { list-style: none; margin: 0; padding: 0; }
@@ -81,6 +82,11 @@
       <output id="volNum" for="vol" class="muted">80</output>
     </div>
     <p id="volNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Also sets the radio's own speaker.</p>
+    <div id="mode" class="row seg" role="group" aria-label="Radio speakers" hidden>
+      <label>Speakers</label>
+      <button type="button" data-mono="false" aria-pressed="true">Stereo</button>
+      <button type="button" data-mono="true" aria-pressed="false">Mono</button>
+    </div>
     <div class="row sleep" role="group" aria-label="Sleep timer">
       <label>Sleep</label>
       <button type="button" data-min="0" aria-pressed="true">Off</button>
@@ -164,6 +170,22 @@ async function sendSpeakerVol() {
   sendTimer = null;
 }
 
+// Mono or stereo on the radio's own speakers (the browser stream stays
+// stereo). The radio switches at once and remembers it.
+let mono = null, modeSent = 0;
+function showMode() {
+  document.querySelectorAll("#mode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mono === String(mono))));
+}
+document.querySelectorAll("#mode button").forEach(b => b.onclick = async () => {
+  mono = b.dataset.mono === "true";
+  modeSent = Date.now();
+  showMode();
+  try {
+    await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ mono }) });
+  } catch {}
+});
+
 document.querySelectorAll(".sleep button").forEach(b => b.onclick = () => {
   const min = parseInt(b.dataset.min, 10);
   sleepEnd = min ? Date.now() + min * 60000 : 0;
@@ -194,6 +216,11 @@ async function poll() {
     hasSpeaker = !!s.speaker;
     $("power").hidden = !s.can_power_off;
     $("volNote").hidden = !hasSpeaker;
+    $("mode").hidden = !hasSpeaker;
+    if (hasSpeaker && Date.now() - modeSent > 2000 && s.speaker.mono !== mono) {
+      mono = s.speaker.mono;
+      showMode();
+    }
     if (hasSpeaker && !sendTimer && Date.now() - lastInput > 2000 && s.speaker.volume !== vol) {
       vol = s.speaker.volume;
       showVol();
