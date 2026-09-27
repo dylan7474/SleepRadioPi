@@ -24,6 +24,7 @@ import numpy as np
 
 from sleepradiopi.audio import pcm
 from sleepradiopi.audio.eq import Equalizer, clamp
+from sleepradiopi.audio.testsignal import KINDS, TestSignal
 from sleepradiopi.config.atomic import write_atomic
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,7 @@ class SpeakerOutput:
         self.mono = mono                 # both speakers play (L + R) / 2
         self.eq = eq                     # bass/mid/treble, the speaker only
         self.fade_end: float | None = None  # sleep timer: silent at this time.monotonic()
+        self.test: TestSignal | None = None  # a test sound, played instead of the show
         self.enabled = True
         self._running = False            # between the show's start() and stop()
         self._proc: subprocess.Popen | None = None
@@ -104,13 +106,24 @@ class SpeakerOutput:
                 g = gain(self.volume)
                 if self.fade_end is not None:
                     g *= max(0.0, min(1.0, (self.fade_end - time.monotonic()) / SLEEP_FADE_S))
+                test = self.test
             if proc is None:
                 return
             x = block[i:i + SLICE_FRAMES].astype(np.float32)
-            if self.mono:
-                x = np.repeat(x.mean(axis=1, keepdims=True), x.shape[1], axis=1)
-            if self.eq is not None:
-                x = self.eq.process(x)
+            if test is not None:             # the box as it is: no mono mix, EQ or low cut
+                x = test.next(len(x))
+                if test.done:
+                    with self._lock:
+                        if self.test is test:
+                            self.test = None
+                    if self.eq is not None:
+                        self.eq.reset()      # don't replay the show from before the test
+                    log.info("speaker: test sound finished")
+            else:
+                if self.mono:
+                    x = np.repeat(x.mean(axis=1, keepdims=True), x.shape[1], axis=1)
+                if self.eq is not None:
+                    x = self.eq.process(x)
             part = np.clip(x * g, -32768, 32767).astype(np.int16)
             try:
                 proc.stdin.write(part.tobytes())
@@ -277,6 +290,7 @@ class SpeakerControl:
 
     def pause(self) -> None:
         self.set_sleep(0)            # a pause (knob, page or the timer itself) ends the timer
+        self.stop_test()
         with self._lock:
             if self.paused:
                 return
@@ -284,6 +298,25 @@ class SpeakerControl:
             self.speaker.set_enabled(False)
         log.info("speaker: pause")
         self._leave()
+
+    def start_test(self, kind: str) -> None:
+        """Play a test sound (testsignal.KINDS) on the speaker instead of the
+        show; starts the speaker if it was paused."""
+        if kind not in KINDS:
+            raise ValueError(f"unknown test sound {kind!r}")
+        signal = TestSignal(kind, pcm.SAMPLE_RATE, pcm.CHANNELS)
+        self.play()
+        with self._lock:
+            self.speaker.test = signal
+        log.info("speaker: test sound %s", kind)
+
+    def stop_test(self) -> None:
+        with self._lock:
+            stopped, self.speaker.test = self.speaker.test, None
+        if stopped is not None:
+            if self.speaker.eq is not None:
+                self.speaker.eq.reset()
+            log.info("speaker: test sound stopped")
 
     def set_sleep(self, minutes: float) -> None:
         """Sleep timer: fade the speaker out over the last minute, then pause.
@@ -320,6 +353,10 @@ class SpeakerControl:
     def status(self) -> dict:
         status = {"volume": self.speaker.volume, "playing": not self.paused,
                   "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None}
+        test = self.speaker.test
+        status["test"] = None if test is None else {
+            "kind": test.kind, "label": test.label, "elapsed_s": round(test.elapsed_s, 1),
+            "duration_s": test.duration_s, "hz": None if test.hz() is None else round(test.hz())}
         end = self.speaker.fade_end
         if end is not None and self._sleep_min:
             status["sleep_min"] = self._sleep_min

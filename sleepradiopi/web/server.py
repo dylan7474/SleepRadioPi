@@ -172,8 +172,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
             {"pause": true | false | "toggle"}, {"sleep": minutes (0 = off)},
             {"mono": true | false} or
-            {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three) or
-            {"highpass": Hz} (the low cut; 0 = off).
+            {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three),
+            {"highpass": Hz} (the low cut; 0 = off) or
+            {"test": "bass" | "sweep" | "pink" | "stop"} (a test sound on the speaker).
             Replies with the speaker's status."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -203,6 +204,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             or not 0 <= minutes <= 600:
                         raise ValueError("sleep must be 0-600 minutes")
                     speaker.set_sleep(minutes)
+                if "test" in body:
+                    if body["test"] == "stop":
+                        speaker.stop_test()
+                    elif isinstance(body["test"], str):
+                        speaker.start_test(body["test"])   # ValueError if unknown
+                    else:
+                        raise ValueError("test must be a name")
                 if body.get("pause") == "toggle":
                     speaker.toggle()
                 elif body.get("pause") is True:

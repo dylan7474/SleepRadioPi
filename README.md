@@ -157,11 +157,17 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   so they can't clip. Its **Low cut** (`speaker_highpass_hz`, a 24 dB/octave
   high-pass: Off / 100-160 Hz) keeps the deepest bass out of the small
   speakers; use ~140 Hz with the case's bass port back panel.
+  Its **Test sound** card plays a bass sweep (40-600 Hz), a full sweep
+  (40 Hz-16 kHz, both 24 s, logarithmic, with the frequency shown live) or
+  15 s of pink noise (for a phone spectrum-analyser app) on the speaker,
+  instead of the show for a moment, at the speaker's volume with the EQ and
+  low cut bypassed -- to compare the case's back panels.
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
 - `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
   `{"pause": true | false | "toggle"}` (the knob's controls, for testing),
   `{"sleep": minutes}` (0 = off; not kept over a restart) or
-  `{"mono": true | false}`, `{"highpass": Hz}` or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
+  `{"mono": true | false}`, `{"highpass": Hz}`, `{"test": "bass" | "sweep" | "pink" | "stop"}`
+  or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
   (any of the bands; both saved in the config).
 - **Settings** card: *Save settings* downloads the settings and the speaker
   volume as one JSON file (`GET /api/settings`); *Load settings* sends one
