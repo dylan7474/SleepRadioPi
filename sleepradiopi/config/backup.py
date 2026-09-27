@@ -21,7 +21,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 from sleepradiopi.audio.eq import BANDS, MAX_DB
-from sleepradiopi.broadcast import birthdays
+from sleepradiopi.broadcast import birthdays, profiles
 from sleepradiopi.broadcast.models import Chattiness
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.config.settings import Settings, load
@@ -33,7 +33,8 @@ VERSION = 1
 LOCAL = {"music_folder", "jingles_folder", "voices_folder", "hooks_file", "http_port",
          "speaker_enabled", "speaker_device", "gpio_pin_mapping", "lcd_panel_type"}
 # Applied while the station runs; any other change needs a restart.
-LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays"}
+LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
+        "profiles", "broadcast_profile"}
 
 CHOICES = {
     "broadcast_voice": {None, "stock", "personal"},
@@ -96,6 +97,11 @@ def _check(name: str, value):
         lo, hi = RANGES[name]
         if not lo <= value <= hi:
             raise BadSettings(f"{name}: {value!r} is out of range ({lo} to {hi})")
+    if name == "profiles":
+        try:
+            return profiles.validate(value)
+        except ValueError as e:
+            raise BadSettings(f"profiles: {e}") from None
     if name == "birthdays":
         try:
             return birthdays.validate(value)

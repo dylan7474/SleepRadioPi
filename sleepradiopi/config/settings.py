@@ -27,6 +27,8 @@ class Settings:
     hooks_file: str | None = None         # default: the bundled sleepradiopi/data/dj_hooks_70s.txt
     broadcast_voice: str | None = "stock"      # "stock" or "personal"; None = music and jingles only
     broadcast_artist: str | None = None   # artist radio ("The Beatles" -> "Beatles Radio"); None = everything
+    profiles: list = field(default_factory=list)   # [{"name": "Friday List", "artists": [...]}]
+    broadcast_profile: str | None = None  # the profile playing (instead of an artist); None = none
     broadcast_chattiness: str = "maximum"
     birthdays: list = field(default_factory=list)  # [{"name", "day", "month", "year"?}]: the DJ wishes them on the day
     broadcast_jingle_enabled: bool = True

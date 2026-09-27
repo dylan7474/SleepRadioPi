@@ -103,7 +103,7 @@ def test_web_api_lists_and_sets_the_artist(tmp_path: Path) -> None:
         with urllib.request.urlopen(base + "/api/artists") as r:
             data = json.load(r)
         assert [a["name"] for a in data["artists"]] == ["The Beatles", "Crowded House", "Nick Drake"]
-        assert post({"artist": "The Beatles"}) == {"found": True, "artist": "The Beatles",
+        assert post({"artist": "The Beatles"}) == {"found": True, "artist": "The Beatles", "profile": None,
                                                    "station_name": "Beatles Radio"}
         assert load(conf).broadcast_artist == "The Beatles"
         assert json.loads(conf.read_text())["music_folder"] == "/media/music"

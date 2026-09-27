@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from sleepradiopi.broadcast import birthdays
+from sleepradiopi.broadcast import birthdays, profiles
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.io.announce import Clip
@@ -85,8 +85,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/birthdays":
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
             elif path == "/api/artists":
-                self._send(json.dumps({"artist": station.artist, "station_name": station.builder.station,
-                                       "artists": station.artists()}).encode(), "application/json")
+                self._send(json.dumps({**self._selection(), "artists": station.artists(),
+                                       "profiles": station.profiles}).encode(), "application/json")
             elif path == "/stream":
                 self._stream()
             else:
@@ -109,6 +109,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._station()
             elif path == "/api/birthdays":
                 self._set_birthdays()
+            elif path == "/api/profiles":
+                self._set_profiles()
             elif path == "/api/birthdays/hear":
                 self._hear_birthday()
             else:
@@ -164,8 +166,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self.wfile.write(body)
                 return
             changed = backup.apply(config_file, settings)     # before the live ones save theirs
-            if "broadcast_artist" in changed:
-                station.set_artist(settings["broadcast_artist"])
+            if "profiles" in changed:
+                station.set_profiles(settings["profiles"])
+            if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
+                if settings.get("broadcast_profile"):
+                    station.set_profile(settings["broadcast_profile"])
+                else:
+                    station.set_artist(settings.get("broadcast_artist"))
             if "birthdays" in changed:
                 station.set_birthdays(settings["birthdays"])
             if speaker is not None:
@@ -243,22 +250,49 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             threading.Thread(target=run, name="birthday-preview", daemon=True).start()
             self._send(json.dumps({"ok": True, "text": text}).encode(), "application/json")
 
+        def _selection(self) -> dict:
+            return {"artist": station.artist, "profile": station.profile,
+                    "station_name": station.builder.station}
+
+        def _save_selection(self) -> None:
+            if config_file is not None:
+                save_setting(config_file, "broadcast_artist", station.artist)
+                save_setting(config_file, "broadcast_profile", station.profile)
+
         def _station(self) -> None:
-            """/api/station {"artist": "The Beatles" | null}: artist radio (only
-            that artist, and the DJ says "Beatles Radio"), or everything. Saved."""
+            """/api/station {"artist": "The Beatles"} (artist radio: only that
+            artist, and the DJ says "Beatles Radio"), {"profile": "Friday List"}
+            (only the artists on that list), or {"artist": null} (everything). Saved."""
             try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                artist = body["artist"]
-                if artist is not None and (not isinstance(artist, str) or len(artist) > 200):
-                    raise ValueError("artist must be a name or null")
+                body = self._body()
+                if "profile" in body:
+                    kind, value = "profile", body["profile"]
+                else:
+                    kind, value = "artist", body["artist"]
+                if value is not None and (not isinstance(value, str) or len(value) > 200):
+                    raise ValueError("a name or null")
             except (ValueError, TypeError, KeyError, AttributeError):
                 self.send_error(400)
                 return
-            found = station.set_artist(artist.strip() if artist else None)
+            value = value.strip() if value else None
+            found = station.set_profile(value) if kind == "profile" else station.set_artist(value)
+            self._save_selection()
+            self._send(json.dumps({"found": found, **self._selection()}).encode(), "application/json")
+
+        def _set_profiles(self) -> None:
+            """POST /api/profiles {"profiles": [{"name", "artists": [...]}, ...]}:
+            replace the lists. Saved; the one playing follows the edit."""
+            try:
+                entries = profiles.validate(self._body()["profiles"])
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"profiles\": [...]}")
+                return
+            station.set_profiles(entries)
             if config_file is not None:
-                save_setting(config_file, "broadcast_artist", station.artist)
-            self._send(json.dumps({"found": found, "artist": station.artist,
-                                   "station_name": station.builder.station}).encode(), "application/json")
+                save_setting(config_file, "profiles", station.profiles)
+            self._save_selection()
+            self._send(json.dumps({**self._selection(), "profiles": station.profiles}).encode(),
+                       "application/json")
 
         def _knob(self) -> None:
             """/api/knob {"press": "short" | "long"}: the knob's switch, from the

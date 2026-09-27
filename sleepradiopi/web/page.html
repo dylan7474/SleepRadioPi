@@ -64,6 +64,16 @@
   #artistRadio { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
             border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .6rem; }
   #artistRadio:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #listEd { margin-top: .75rem; border-top: 1px solid var(--line); padding-top: .25rem; }
+  #listEd select, #listEd input:not([type=checkbox]) { font: inherit; font-size: .95rem; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
+  #listName { flex: 1 1 10rem; }
+  #listFilter { width: 100%; margin-top: .75rem; }
+  #listArtists { max-height: 16rem; overflow-y: auto; margin-top: .5rem; border: 1px solid var(--line);
+    border-radius: .5rem; padding: .25rem .5rem; }
+  #listArtists label { display: block; padding: .25rem 0; overflow-wrap: anywhere; }
+  #listArtists input { accent-color: var(--accent); }
+  #listDelete { border-color: var(--live); color: var(--live); }
   #bdList li { align-items: center; }
   #bdList .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   #bdList button { padding: .25rem .6rem; font-size: .85rem; }
@@ -114,8 +124,23 @@
       <select id="artistRadio" aria-label="Artist radio">
         <option value="">All artists (Sleep Radio)</option>
       </select>
+      <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Lists…</button>
     </div>
-    <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only, e.g. Beatles Radio.</p>
+    <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
+      Radio), or one of your lists of artists.</p>
+    <div id="listEd" hidden>
+      <div class="row">
+        <select id="listPick" aria-label="List to edit"></select>
+        <input id="listName" placeholder="List name, e.g. Friday List" maxlength="40" aria-label="List name">
+      </div>
+      <input id="listFilter" placeholder="Find an artist" aria-label="Find an artist">
+      <div id="listArtists"></div>
+      <p id="listCount" class="muted" style="margin:.4rem 0 0;font-size:.85rem"></p>
+      <div class="row">
+        <button id="listSave" type="button">Save list</button>
+        <button id="listDelete" type="button" hidden>Delete list</button>
+      </div>
+    </div>
   </section>
 
   <section id="bd" class="card">
@@ -360,45 +385,110 @@ async function sendTest(test) {
 document.querySelectorAll("#test button[data-test]").forEach(b => b.onclick = () => sendTest(b.dataset.test));
 $("testStop").onclick = () => sendTest("stop");
 
-// Artist radio: one artist only, and the DJ (and this page) call the station
-// after them. On air the song already lined up next still plays first.
-let artistNow = null;
+// Artist radio and lists: one artist, or a named list of artists ("Friday
+// List"); the DJ (and this page) call the station after it. On air the song
+// already lined up next still plays first. Values: "", "a:<artist>", "p:<list>".
+let selNow = "", allArtists = [], allLists = [];
+const selValue = (artist, profile) => profile ? "p:" + profile : artist ? "a:" + artist : "";
 async function loadArtists() {
   try {
     const data = await (await fetch("/api/artists", { cache: "no-store" })).json();
+    allArtists = data.artists; allLists = data.profiles;
     const sel = $("artistRadio");
-    sel.replaceChildren(sel.options[0]);   // (drops a placeholder added by selectArtist)
-    for (const a of data.artists) {
-      const o = document.createElement("option");
-      o.value = a.name; o.textContent = `${a.name} (${a.tracks})`;
-      sel.append(o);
+    sel.replaceChildren(new Option("All artists (Sleep Radio)", ""));
+    if (allLists.length) {
+      const g = Object.assign(document.createElement("optgroup"), { label: "Your lists" });
+      allLists.forEach(p => g.append(new Option(`${p.name} (${p.artists.length} artists)`, "p:" + p.name)));
+      sel.append(g);
     }
-    showArtist(data.artist, data.station_name);
+    const g = Object.assign(document.createElement("optgroup"), { label: "Artists" });
+    allArtists.forEach(a => g.append(new Option(`${a.name} (${a.tracks})`, "a:" + a.name)));
+    sel.append(g);
+    showSelection(data.artist, data.profile, data.station_name);
+    fillListPick();
   } catch {}
 }
-function selectArtist(artist) {
+function showSelection(artist, profile, name) {
+  selNow = selValue(artist, profile);
   const sel = $("artistRadio");
-  if (artist && ![...sel.options].some(o => o.value === artist))   // list not loaded yet
-    sel.append(Object.assign(document.createElement("option"), { value: artist, textContent: artist }));
-  sel.value = artist || "";
-}
-function showArtist(artist, name) {
-  artistNow = artist;
-  selectArtist(artist);
+  if (selNow && ![...sel.options].some(o => o.value === selNow))   // list not loaded yet
+    sel.append(new Option(profile || artist, selNow));
+  sel.value = selNow;
   const words = (name || "Sleep Radio").split(" ");
   const last = words.pop();
   $("stationName").replaceChildren(words.join(" ") + " ", Object.assign(document.createElement("span"), { textContent: last }));
   document.title = name || "Sleep Radio";
 }
 $("artistRadio").onchange = async e => {
-  const artist = e.target.value || null;
+  const v = e.target.value;
+  const body = v.startsWith("p:") ? { profile: v.slice(2) } : { artist: v ? v.slice(2) : null };
   try {
     const r = await (await fetch("/api/station", { method: "POST", headers: { "Content-Type": "application/json" },
-                                                   body: JSON.stringify({ artist }) })).json();
-    showArtist(r.artist, r.station_name);
-    $("artistNote").textContent = !r.found ? "Nothing by that artist here any more; playing everything."
-      : artist ? `${r.station_name}: after the song that's lined up next.` : "Back to everything.";
+                                                   body: JSON.stringify(body) })).json();
+    showSelection(r.artist, r.profile, r.station_name);
+    $("artistNote").textContent = !r.found ? "Nothing to play for that here; playing everything."
+      : v ? `${r.station_name}: after the song that's lined up next.` : "Back to everything.";
   } catch { $("artistNote").textContent = "Couldn't reach the radio."; }
+};
+
+// The list editor: pick a list (or New), name it, tick artists, save.
+let listTicked = new Set();
+function fillListPick(keep) {
+  const pick = $("listPick"), was = keep ?? pick.value;
+  pick.replaceChildren(new Option("New list…", ""), ...allLists.map(p => new Option(p.name, p.name)));
+  pick.value = allLists.some(p => p.name === was) ? was : "";
+}
+function showListEditor() {
+  const list = allLists.find(p => p.name === $("listPick").value);
+  $("listName").value = list ? list.name : "";
+  listTicked = new Set(list ? list.artists.map(a => a.toLowerCase()) : []);
+  $("listDelete").hidden = !list;
+  drawListArtists();
+}
+function drawListArtists() {
+  const q = $("listFilter").value.trim().toLowerCase();
+  const names = allArtists.map(a => a.name);
+  // artists on the list that the library no longer has still show, so they can be unticked
+  const extra = [...listTicked].filter(k => !names.some(n => n.toLowerCase() === k));
+  const box = $("listArtists");
+  box.replaceChildren(...[...names, ...extra].filter(n => !q || n.toLowerCase().includes(q)).map(n => {
+    const lab = document.createElement("label");
+    const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: listTicked.has(n.toLowerCase()) });
+    cb.onchange = () => { cb.checked ? listTicked.add(n.toLowerCase()) : listTicked.delete(n.toLowerCase()); countList(); };
+    lab.append(cb, " " + n);
+    return lab;
+  }));
+  countList();
+}
+function countList() { $("listCount").textContent = `${listTicked.size} artist${listTicked.size === 1 ? "" : "s"} ticked`; }
+async function saveLists(lists, done) {
+  try {
+    const r = await fetch("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" },
+                                             body: JSON.stringify({ profiles: lists }) });
+    const reply = await r.json();
+    if (!r.ok) { $("listCount").textContent = "Not saved: " + reply.error + "."; return false; }
+    $("listCount").textContent = done;
+    return true;
+  } catch { $("listCount").textContent = "Couldn't reach the radio."; return false; }
+}
+$("listsBtn").onclick = () => {
+  $("listEd").hidden = !$("listEd").hidden;
+  if (!$("listEd").hidden) { fillListPick(); showListEditor(); }
+};
+$("listPick").onchange = showListEditor;
+$("listFilter").oninput = drawListArtists;
+$("listSave").onclick = async () => {
+  const name = $("listName").value.trim(), old = $("listPick").value;
+  const byKey = new Map([...allArtists.map(a => [a.name.toLowerCase(), a.name]),
+                         ...(allLists.find(p => p.name === old)?.artists || []).map(a => [a.toLowerCase(), a])]);
+  const entry = { name, artists: [...listTicked].map(k => byKey.get(k) || k) };
+  const lists = old ? allLists.map(p => p.name === old ? entry : p) : [...allLists, entry];
+  if (await saveLists(lists, `Saved “${name}”.`)) { await loadArtists(); fillListPick(name); showListEditor(); $("listCount").textContent = `Saved “${name}”.`; }
+};
+$("listDelete").onclick = async () => {
+  const old = $("listPick").value;
+  if (!old || !confirm(`Delete the list “${old}”?`)) return;
+  if (await saveLists(allLists.filter(p => p.name !== old), `Deleted “${old}”.`)) { await loadArtists(); fillListPick(""); showListEditor(); }
 };
 loadArtists();
 
@@ -582,8 +672,8 @@ async function poll() {
       vol = s.speaker.volume;
       showVol();
     }
-    if (s.station_name && (s.artist ?? null) !== artistNow && document.activeElement !== $("artistRadio"))
-      showArtist(s.artist ?? null, s.station_name);    // changed on another phone
+    if (s.station_name && selValue(s.artist, s.profile) !== selNow && document.activeElement !== $("artistRadio"))
+      showSelection(s.artist, s.profile, s.station_name);    // changed on another phone
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
     badge.classList.toggle("live", s.on_air);
@@ -645,7 +735,7 @@ $("settingsFile").onchange = async e => {
                : reply.needs_restart ? "Loaded. Some take effect the next time the radio starts."
                : reply.changed.length ? "Loaded." : "Loaded. They were the same as the radio's already.");
     lastInput = eqInput = modeSent = lowcutSent = 0;   // let the page follow the new volume, EQ and mode
-    poll(); loadBirthdays(); loadArtists();
+    poll(); loadBirthdays(); loadArtists();   // (lists come with the artists)
   } catch {
     settingsNote("Couldn't reach the radio. Try again?", true);
   }

@@ -43,6 +43,7 @@ from sleepradiopi.tts.worker import TtsWorker
 from .library import scan_jingles, scan_music
 from .models import BroadcastConfig, BroadcastTrack, Chattiness, JingleClip, LinkKind
 from .news import DueNews, NewsRepository, NewsSchedule, QuietHours, build_bulletin_body, bulletin_time_line
+from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
 from .selector import BroadcastSelector, HookPool, parse_hooks
@@ -164,6 +165,12 @@ class Station:
         self.tracks = scan_music(self.music_dir, cfg.get("tag_cache"))
         self.selector = BroadcastSelector(self.tracks)
         self.artist: str | None = None      # artist radio: only this artist's tracks
+        self.profile: str | None = None     # ...or only the artists on this list
+        try:
+            self.profiles: list[dict] = profiles_mod.validate(cfg.get("profiles") or [])
+        except ValueError as e:              # a hand-edited config: don't stop the station
+            log.warning("profiles ignored: %s", e)
+            self.profiles = []
         self.jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every else []
         self._jingle_paths = {j.path for j in self.jingles}
         self._jingle_bag: deque[JingleClip] = deque()
@@ -194,8 +201,10 @@ class Station:
         self.gap_plan: list[str] = []
         self.history: deque[dict] = deque(maxlen=12)
         self.shows_started = 0
-        if cfg.get("broadcast_artist"):
-            self._use_artist(cfg["broadcast_artist"])
+        if cfg.get("broadcast_profile"):
+            self._use_selection(profile=cfg["broadcast_profile"])
+        elif cfg.get("broadcast_artist"):
+            self._use_selection(artist=cfg["broadcast_artist"])
         self._prepare_opening()
 
     # --- listeners / show lifecycle ---------------------------------------------------
@@ -572,35 +581,58 @@ class Station:
         out = [{"name": c.most_common(1)[0][0], "tracks": sum(c.values())} for c in groups.values()]
         return sorted(out, key=lambda a: artist_key(a["name"]))
 
-    def _use_artist(self, artist: str | None) -> bool:
-        """Switch the selector (and the DJ's station name). False, and back to
-        everything, if the library has nothing by that artist."""
-        found, pool = True, self.tracks
-        if artist:
+    def _use_selection(self, artist: str | None = None, profile: str | None = None) -> bool:
+        """Switch the selector (and the DJ's station name) to one artist, one
+        profile, or everything. False, and back to everything, if the library
+        has nothing to play for it (or there's no such profile)."""
+        found, pool, name = True, self.tracks, artist_station_name(None)
+        if profile:
+            match = next((p for p in self.profiles if p["name"].lower() == profile.lower()), None)
+            keys = {artist_key(a) for a in match["artists"]} if match else set()
+            pool = [t for t in self.tracks if artist_key(t.artist) in keys]
+            profile = match["name"] if match else profile
+            name = profiles_mod.station_name(profile)
+        elif artist:
             key = artist_key(artist)
             pool = [t for t in self.tracks if artist_key(t.artist) == key]
-            if not pool:
-                log.warning("artist radio: no tracks by %r; playing everything", artist)
-                found, artist, pool = False, None, self.tracks
-        self.artist = artist
+            name = artist_station_name(artist)
+        if (artist or profile) and not pool:
+            log.warning("nothing to play for %r; playing everything", profile or artist)
+            found, artist, profile, pool, name = False, None, None, self.tracks, artist_station_name(None)
+        self.artist, self.profile = (None, profile) if profile else (artist, None)
         self.selector = BroadcastSelector(pool)
-        self.builder.station = artist_station_name(artist)
+        self.builder.station = name
         return found
 
     def set_artist(self, artist: str | None) -> bool:
         """Play only this artist (None = everything). On air, the track already
         lined up next still plays (the DJ may have introduced it), then the
         new choice. False if the library has nothing by that artist."""
+        return self._reselect(artist=artist)
+
+    def set_profile(self, profile: str | None) -> bool:
+        """Play only the artists on this profile (None = everything)."""
+        return self._reselect(profile=profile)
+
+    def set_profiles(self, profiles: list[dict]) -> None:
+        """Replace the profiles (validated; ValueError if wrong). If the one
+        playing was changed it's re-applied; if it was removed, everything plays."""
+        self.profiles = profiles_mod.validate(profiles)
+        if self.profile:
+            still = any(p["name"].lower() == self.profile.lower() for p in self.profiles)
+            self._reselect(profile=self.profile if still else None)
+
+    def _reselect(self, artist: str | None = None, profile: str | None = None) -> bool:
         with self._lock:
             on_air = self._thread is not None and self._thread.is_alive()
-            found = self._use_artist(artist)
+            found = self._use_selection(artist, profile)
             if on_air:
                 while len(self._queue) > 1:     # keep the one that's been announced
                     self._queue.pop()
             else:
                 self._queue.clear()
                 self._opening = None
-        log.info("artist radio: %s (%s)", self.artist or "everything", self.builder.station)
+        log.info("now playing from: %s (%s)", self.profile or self.artist or "everything", self.builder.station)
         if not on_air and self.tracks:
             self._prepare_opening()
         return found
@@ -656,6 +688,7 @@ class Station:
             "history": list(self.history),
             "library": {"tracks": len(self.tracks), "jingles": len(self.jingles)},
             "artist": self.artist,
+            "profile": self.profile,
             "station_name": self.builder.station,
             "voices_ready": bool(self.tts and self.tts.ready),
             "voice": {"name": self.dj_voice, "rss_mb": self.tts.last_rss_mb, "restarts": self.tts.restarts}
