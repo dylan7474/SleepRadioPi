@@ -84,8 +84,7 @@ def test_play_clip_while_paused_pauses_again_after(tmp_path: Path) -> None:
     assert not ctl.paused and spk.test is clip
     while spk.test is not None:
         spk.write(np.zeros((1024, 2), dtype=np.int16))
-    assert _wait(lambda: ctl.paused, timeout=2)
-    assert calls == ["join", "leave"]
+    assert _wait(lambda: ctl.paused and calls == ["join", "leave"], timeout=2)
     # while playing, a clip leaves it playing
     ctl.play()
     ctl.play_clip(Clip(np.ones((1024, 2), dtype=np.int16), "beep", "x"))

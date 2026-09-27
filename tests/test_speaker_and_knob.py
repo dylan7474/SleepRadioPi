@@ -127,8 +127,9 @@ def test_sleep_timer_fades_the_speaker_then_pauses(tmp_path: Path, monkeypatch) 
     spk.write(block)                           # before the fade: full volume
     time.sleep(0.4)
     spk.write(block)                           # halfway through the fade
-    assert _wait(lambda: ctl.paused, timeout=2)
-    assert calls == ["join", "leave"] and spk.fade_end is None
+    # paused is set just before leave() is called: wait for both
+    assert _wait(lambda: ctl.paused and calls == ["join", "leave"], timeout=2)
+    assert spk.fade_end is None
     assert ctl.status()["sleep_left_s"] is None
     played = np.frombuffer(out.read_bytes(), dtype=np.int16).reshape(-1, 2)
     assert (played[:1024] == 10000).all()
