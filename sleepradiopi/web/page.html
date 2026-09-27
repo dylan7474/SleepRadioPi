@@ -151,6 +151,15 @@
       <button type="button" data-test="pink" title="15 s, for a phone spectrum app">Pink noise</button>
       <button id="testStop" type="button" hidden>Stop</button>
     </div>
+    <div class="row">
+      <label>Speaker check</label>
+      <button type="button" data-test="left" title="Noise on the left speaker only">Left</button>
+      <button type="button" data-test="right" title="Noise on the right speaker only">Right</button>
+      <button type="button" data-test="phase" title="Switches every 3 s: both the same, then the right one inverted">Phase check</button>
+    </div>
+    <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">Phase check: <i>in phase</i> should sound fuller
+      and centred. If <i>out of phase</i> sounds fuller, one speaker's wires are the wrong way round at the amp
+      (swap its + and −).</p>
     <p id="testNow" class="muted" hidden></p>
   </section>
 
@@ -282,7 +291,8 @@ function showTest(t) {
   $("testStop").hidden = !t;
   $("testNow").hidden = !t;
   if (t) {
-    const hz = t.hz == null ? "" : `<b>${t.hz >= 1000 ? (t.hz / 1000).toFixed(1) + " kHz" : t.hz + " Hz"}</b> · `;
+    const hz = t.note ? `<b>${t.note}</b> · `
+             : t.hz == null ? "" : `<b>${t.hz >= 1000 ? (t.hz / 1000).toFixed(1) + " kHz" : t.hz + " Hz"}</b> · `;
     $("testNow").innerHTML = `${t.label}: ${hz}${Math.floor(t.elapsed_s)} s of ${t.duration_s}`;
   }
   if (t && !testTimer) testTimer = setInterval(poll, 500);

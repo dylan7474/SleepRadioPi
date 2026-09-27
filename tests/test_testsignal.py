@@ -110,3 +110,29 @@ def test_web_api_starts_and_stops_a_test(tmp_path: Path) -> None:
             assert err.value.code == 400
     finally:
         httpd.shutdown()
+
+
+def test_left_and_right_play_on_one_speaker_only() -> None:
+    left = TestSignal("left", RATE, 2).next(RATE)
+    right = TestSignal("right", RATE, 2).next(RATE)
+    assert np.abs(left[:, 0]).max() > 1000 and not left[:, 1].any()
+    assert np.abs(right[:, 1]).max() > 1000 and not right[:, 0].any()
+
+
+def test_phase_check_alternates_polarity_every_step() -> None:
+    sig = TestSignal("phase", RATE, 2)
+    x = sig.next(sig.total)
+    step = int(3 * RATE)
+    first, second = x[1000:step - 1000], x[step + 1000:2 * step - 1000]
+    assert np.array_equal(first[:, 0], first[:, 1])            # in phase
+    assert np.array_equal(second[:, 0], -second[:, 1])         # right inverted
+    assert abs(x[step, 0]) < 1                                 # faded at the switch: no click
+    half = TestSignal("phase", RATE, 2)
+    half.next(RATE)
+    assert half.note().startswith("In phase")
+    half.next(3 * RATE)
+    assert half.note().startswith("Out of phase")
+    # low noise only: next to nothing above 1 kHz
+    power = np.abs(np.fft.rfft(x[:, 0].astype(float))) ** 2
+    f = np.fft.rfftfreq(len(x), 1 / RATE)
+    assert power[f > 1000].sum() < 0.01 * power.sum()

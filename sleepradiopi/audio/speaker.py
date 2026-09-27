@@ -356,7 +356,8 @@ class SpeakerControl:
         test = self.speaker.test
         status["test"] = None if test is None else {
             "kind": test.kind, "label": test.label, "elapsed_s": round(test.elapsed_s, 1),
-            "duration_s": test.duration_s, "hz": None if test.hz() is None else round(test.hz())}
+            "duration_s": test.duration_s, "hz": None if test.hz() is None else round(test.hz()),
+            "note": test.note()}
         end = self.speaker.fade_end
         if end is not None and self._sleep_min:
             status["sleep_min"] = self._sleep_min

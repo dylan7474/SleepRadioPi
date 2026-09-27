@@ -161,12 +161,16 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   (40 Hz-16 kHz, both 24 s, logarithmic, with the frequency shown live) or
   15 s of pink noise (for a phone spectrum-analyser app) on the speaker,
   instead of the show for a moment, at the speaker's volume with the EQ and
-  low cut bypassed -- to compare the case's back panels.
+  low cut bypassed -- to compare the case's back panels. Its *Speaker check*
+  row plays noise on the **left** or **right** speaker only, and a **phase
+  check** that switches every 3 s between both speakers the same and the
+  right one inverted: if the inverted part sounds fuller, one speaker is
+  wired the wrong way round (vocals then vanish in stereo but not in mono).
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
 - `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
   `{"pause": true | false | "toggle"}` (the knob's controls, for testing),
   `{"sleep": minutes}` (0 = off; not kept over a restart) or
-  `{"mono": true | false}`, `{"highpass": Hz}`, `{"test": "bass" | "sweep" | "pink" | "stop"}`
+  `{"mono": true | false}`, `{"highpass": Hz}`, `{"test": "bass" | "sweep" | "pink" | "left" | "right" | "phase" | "stop"}`
   or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
   (any of the bands; both saved in the config).
 - **Settings** card: *Save settings* downloads the settings and the speaker
