@@ -50,6 +50,11 @@
   .now-foot #next { margin: 0; }
   #skip { flex: none; padding: .35rem .8rem; font-size: .9rem; }
   #power .row { margin-top: 0; justify-content: space-between; }
+  #eq .row label { width: 3.6rem; }
+  #eq output { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; }
+  .card-head h2 { margin: 0; }
+  #eqFlat { padding: .3rem .7rem; font-size: .85rem; }
   #off { border-color: var(--live); color: var(--live); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
   footer a { color: var(--muted); }
@@ -96,6 +101,24 @@
       <button type="button" data-min="90" aria-pressed="false">1½h</button>
       <span id="sleepLeft" class="muted"></span>
     </div>
+  </section>
+
+  <section id="eq" class="card" hidden>
+    <div class="card-head">
+      <h2>Speaker EQ</h2>
+      <button id="eqFlat" type="button">Flat</button>
+    </div>
+    <div class="row"><label for="eq-bass">Bass</label>
+      <input id="eq-bass" data-band="bass" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-bassNum" class="muted">0 dB</output></div>
+    <div class="row"><label for="eq-mid">Mid</label>
+      <input id="eq-mid" data-band="mid" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-midNum" class="muted">0 dB</output></div>
+    <div class="row"><label for="eq-treble">Treble</label>
+      <input id="eq-treble" data-band="treble" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-trebleNum" class="muted">0 dB</output></div>
+    <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
+      A boost lowers the overall level a little, so it can't distort.</p>
   </section>
 
   <section class="card">
@@ -186,6 +209,27 @@ document.querySelectorAll("#mode button").forEach(b => b.onclick = async () => {
   } catch {}
 });
 
+// Bass / mid / treble (dB) on the radio's own speakers. The radio saves it.
+const BANDS = ["bass", "mid", "treble"];
+let eq = { bass: 0, mid: 0, treble: 0 }, eqInput = 0, eqTimer = null;
+const fmtDb = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + " dB";
+function showEq() {
+  BANDS.forEach(b => { $("eq-" + b).value = eq[b]; $("eq-" + b + "Num").textContent = fmtDb(eq[b]); });
+}
+function queueEq() {
+  eqInput = Date.now();
+  showEq();
+  if (!eqTimer) eqTimer = setTimeout(async () => {
+    try {
+      await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ eq }) });
+    } catch {}
+    eqTimer = null;
+  }, 150);
+}
+BANDS.forEach(b => $("eq-" + b).oninput = e => { eq = { ...eq, [b]: parseInt(e.target.value, 10) }; queueEq(); });
+$("eqFlat").onclick = () => { eq = { bass: 0, mid: 0, treble: 0 }; queueEq(); };
+
 document.querySelectorAll(".sleep button").forEach(b => b.onclick = () => {
   const min = parseInt(b.dataset.min, 10);
   sleepEnd = min ? Date.now() + min * 60000 : 0;
@@ -217,6 +261,12 @@ async function poll() {
     $("power").hidden = !s.can_power_off;
     $("volNote").hidden = !hasSpeaker;
     $("mode").hidden = !hasSpeaker;
+    $("eq").hidden = !(hasSpeaker && s.speaker.eq);
+    if (hasSpeaker && s.speaker.eq && !eqTimer && Date.now() - eqInput > 2000 &&
+        BANDS.some(b => s.speaker.eq[b] !== eq[b])) {
+      eq = { ...s.speaker.eq };
+      showEq();
+    }
     if (hasSpeaker && Date.now() - modeSent > 2000 && s.speaker.mono !== mono) {
       mono = s.speaker.mono;
       showMode();

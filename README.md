@@ -146,10 +146,17 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
   scale) and follows the knob. Its **Speakers** buttons switch the speaker
   between stereo and mono at once and save it (`speaker_mono`); the browser
   stream stays stereo.
+  Its **Speaker EQ** card sets bass / mid / treble (±12 dB; shelves at
+  120 Hz and 6 kHz, a peak at 1 kHz), heard at once and saved
+  (`speaker_eq`). The MiniAmp has no EQ of its own, so it's done in software
+  (`audio/eq.py`: one linear-phase FIR from the three biquads, FFT per block,
+  ~11% of one Zero 2 W core when not flat); boosts lower the overall level
+  so they can't clip.
 - `GET /api/status` — what's on air, the library, the voice, the speaker.
 - `POST /api/speaker` with JSON `{"volume": 0-100}`, `{"step": n}`,
   `{"pause": true | false | "toggle"}` (the knob's controls, for testing) or
-  `{"mono": true | false}` (saved in the config).
+  `{"mono": true | false}` or `{"eq": {"bass": dB, "mid": dB, "treble": dB}}`
+  (any of the bands; both saved in the config).
 - `POST /api/power` — shut the radio down (the page's **Shut down** button,
   which asks first). The station isn't root, so it only creates the file
   named by `SLEEPRADIOPI_POWER_REQUEST`; something running as root must

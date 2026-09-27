@@ -67,3 +67,32 @@ def test_web_api_rejects_a_non_boolean_mono(server) -> None:
     with pytest.raises(urllib.error.HTTPError) as err:
         _post(base + "/api/speaker", {"mono": "yes"})
     assert err.value.code == 400 and not ctl.speaker.mono
+
+
+def test_web_api_sets_the_eq(tmp_path: Path) -> None:
+    from sleepradiopi.audio.eq import Equalizer
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    spk = SpeakerOutput(command=["sh", "-c", "cat > /dev/null"], eq=Equalizer(44100, 2))
+    ctl = SpeakerControl(spk, lambda: None, lambda: None, config_file=conf)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FakeStation(), None, ctl))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        assert _post(base + "/api/speaker", {"eq": {"bass": 3, "treble": -2}})["eq"] == \
+            {"bass": 3, "mid": 0, "treble": -2}
+        with urllib.request.urlopen(base + "/api/status") as r:
+            assert json.load(r)["speaker"]["eq"]["bass"] == 3
+        assert json.loads(conf.read_text())["speaker_eq"]["treble"] == -2
+        for bad in ({"eq": {"volume": 3}}, {"eq": {"bass": "loud"}}, {"eq": 5},
+                    {"eq": {"bass": True}}):
+            with pytest.raises(urllib.error.HTTPError) as err:
+                _post(base + "/api/speaker", bad)
+            assert err.value.code == 400
+        req = urllib.request.Request(base + "/api/speaker", data=b'{"eq": {"bass": Infinity}}',
+                                     method="POST", headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as err:
+            urllib.request.urlopen(req)
+        assert err.value.code == 400
+    finally:
+        httpd.shutdown()

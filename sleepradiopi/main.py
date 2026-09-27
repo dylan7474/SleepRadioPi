@@ -13,6 +13,8 @@ import logging
 from dataclasses import asdict
 from pathlib import Path
 
+from sleepradiopi.audio import pcm
+from sleepradiopi.audio.eq import Equalizer
 from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.settings import DEFAULT_PATH, load, save
@@ -53,7 +55,8 @@ def main() -> None:
     stream = Mp3Output()
     speaker = control = None
     if settings.speaker_enabled:
-        speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono)
+        speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono,
+                                eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq))
         station = Station(cfg, tts, TeeOutput(speaker, stream))
         control = SpeakerControl(
             speaker, station.listener_joined, station.listener_left,

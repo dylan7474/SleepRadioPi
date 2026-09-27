@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 
 from sleepradiopi.audio import pcm
+from sleepradiopi.audio.eq import Equalizer, clamp
 from sleepradiopi.config.atomic import write_atomic
 
 log = logging.getLogger(__name__)
@@ -45,7 +46,8 @@ class SpeakerOutput:
     """An Output (start/write/stop) that plays through aplay."""
 
     def __init__(self, device: str = "default", volume: int = 30,
-                 command: list[str] | None = None, mono: bool = False) -> None:
+                 command: list[str] | None = None, mono: bool = False,
+                 eq: Equalizer | None = None) -> None:
         self.command = command or [
             "aplay", "-q", "-D", device, "-t", "raw", "-f", "S16_LE",
             "-r", str(pcm.SAMPLE_RATE), "-c", str(pcm.CHANNELS),
@@ -53,12 +55,15 @@ class SpeakerOutput:
         ]
         self.volume = volume
         self.mono = mono                 # both speakers play (L + R) / 2
+        self.eq = eq                     # bass/mid/treble, the speaker only
         self.enabled = True
         self._running = False            # between the show's start() and stop()
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
 
     def _open(self) -> None:
+        if self.eq is not None:
+            self.eq.reset()              # don't replay the end of the last session
         self._proc = subprocess.Popen(self.command, stdin=subprocess.PIPE)
         try:
             fcntl.fcntl(self._proc.stdin, F_SETPIPE_SZ, PIPE_BYTES)
@@ -95,12 +100,12 @@ class SpeakerOutput:
                 g = gain(self.volume)
             if proc is None:
                 return
-            part = block[i:i + SLICE_FRAMES]
+            x = block[i:i + SLICE_FRAMES].astype(np.float32)
             if self.mono:
-                mid = part.astype(np.float32).mean(axis=1, keepdims=True) * g
-                part = np.repeat(mid, part.shape[1], axis=1).astype(np.int16)
-            elif g != 1.0:
-                part = (part.astype(np.float32) * g).astype(np.int16)
+                x = np.repeat(x.mean(axis=1, keepdims=True), x.shape[1], axis=1)
+            if self.eq is not None:
+                x = self.eq.process(x)
+            part = np.clip(x * g, -32768, 32767).astype(np.int16)
             try:
                 proc.stdin.write(part.tobytes())
             except (BrokenPipeError, ValueError, OSError):
@@ -153,7 +158,8 @@ class SpeakerControl:
     The volume is remembered in state_file (saved a few seconds after the
     last change, so turning the knob doesn't write to the card every click).
     Pause isn't remembered: the radio always plays at power-on. Mono/stereo
-    is a setting, so it's saved as speaker_mono in config_file.
+    and the EQ are settings, so they're saved in config_file (speaker_mono,
+    speaker_eq).
     """
 
     def __init__(self, speaker: SpeakerOutput, join: Callable[[], None],
@@ -207,14 +213,33 @@ class SpeakerControl:
             if self.speaker.mono == mono:
                 return
             self.speaker.mono = mono
-            if self.config_file is not None:
-                try:
-                    conf = json.loads(self.config_file.read_text())
-                except (OSError, ValueError):
-                    conf = {}
-                conf["speaker_mono"] = mono
-                write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")
+            self._save_setting("speaker_mono", mono)
         log.info("speaker: %s", "mono" if mono else "stereo")
+
+    def set_eq(self, gains: dict) -> None:
+        """Bass/mid/treble in dB (-12..12; missing bands keep their setting).
+        Heard at once, and saved in the config."""
+        eq = self.speaker.eq
+        if eq is None:
+            return
+        with self._lock:
+            new = clamp({**eq.gains, **gains})
+            if new == eq.gains:
+                return
+            eq.set(new)
+            self._save_setting("speaker_eq", new)
+        log.info("speaker EQ: %s", new)
+
+    def _save_setting(self, key: str, value) -> None:
+        """Set one key in the config file, keeping the others as they are."""
+        if self.config_file is None:
+            return
+        try:
+            conf = json.loads(self.config_file.read_text())
+        except (OSError, ValueError):
+            conf = {}
+        conf[key] = value
+        write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")
 
     def step(self, delta: int) -> None:
         self.set_volume(self.speaker.volume + delta)
@@ -244,5 +269,8 @@ class SpeakerControl:
             self.pause()
 
     def status(self) -> dict:
-        return {"volume": self.speaker.volume, "playing": not self.paused,
-                "mono": self.speaker.mono}
+        status = {"volume": self.speaker.volume, "playing": not self.paused,
+                  "mono": self.speaker.mono}
+        if self.speaker.eq is not None:
+            status["eq"] = dict(self.speaker.eq.gains)
+        return status

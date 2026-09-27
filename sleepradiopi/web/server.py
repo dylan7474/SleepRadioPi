@@ -86,7 +86,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None):
 
         def _speaker(self) -> None:
             """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
-            {"pause": true | false | "toggle"} or {"mono": true | false}.
+            {"pause": true | false | "toggle"}, {"mono": true | false} or
+            {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three).
             Replies with the speaker's status."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -98,13 +99,20 @@ def make_handler(station: Station, output: Mp3Output, speaker=None):
                     if not isinstance(body["mono"], bool):
                         raise ValueError("mono must be true or false")
                     speaker.set_mono(body["mono"])
+                if "eq" in body:
+                    eq = body["eq"]
+                    if not isinstance(eq, dict) or not all(
+                            k in ("bass", "mid", "treble") and isinstance(v, (int, float))
+                            and not isinstance(v, bool) for k, v in eq.items()):
+                        raise ValueError("eq must map bass/mid/treble to numbers")
+                    speaker.set_eq(eq)
                 if body.get("pause") == "toggle":
                     speaker.toggle()
                 elif body.get("pause") is True:
                     speaker.pause()
                 elif body.get("pause") is False:
                     speaker.play()
-            except (ValueError, TypeError, AttributeError):
+            except (ValueError, TypeError, AttributeError, OverflowError):
                 self.send_error(400)
                 return
             self._send(json.dumps(speaker.status()).encode(), "application/json")
