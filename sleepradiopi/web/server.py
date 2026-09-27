@@ -15,7 +15,7 @@ import time
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from sleepradiopi.broadcast import birthdays, profiles
 from sleepradiopi.broadcast.station import Station
@@ -84,6 +84,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._save_settings()
             elif path == "/api/birthdays":
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
+            elif path == "/api/search":
+                q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
+                self._send(json.dumps({"results": station.search(q)}).encode(), "application/json")
             elif path == "/api/artists":
                 self._send(json.dumps({**self._selection(), "artists": station.artists(),
                                        "profiles": station.profiles}).encode(), "application/json")
@@ -111,6 +114,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_birthdays()
             elif path == "/api/profiles":
                 self._set_profiles()
+            elif path == "/api/request":
+                self._request()
             elif path == "/api/birthdays/hear":
                 self._hear_birthday()
             else:
@@ -278,6 +283,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             found = station.set_profile(value) if kind == "profile" else station.set_artist(value)
             self._save_selection()
             self._send(json.dumps({"found": found, **self._selection()}).encode(), "application/json")
+
+        def _request(self) -> None:
+            """POST /api/request {"id": n} (from /api/search): play that track next."""
+            try:
+                track_id = self._body()["id"]
+                if isinstance(track_id, bool) or not isinstance(track_id, int):
+                    raise ValueError("id must be a number from /api/search")
+                reply = station.request(track_id)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
+                return
+            self._send(json.dumps({**reply, "requests": station.requests()}).encode(), "application/json")
 
         def _set_profiles(self) -> None:
             """POST /api/profiles {"profiles": [{"name", "artists": [...]}, ...]}:

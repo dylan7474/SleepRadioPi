@@ -159,13 +159,20 @@ when the station has one.
 
 - **Now playing** with a progress bar, what's next, and **Skip**.
 - **Tune in** to listen in the browser (an MP3 stream of the same show).
+- **Play next** — search the library (every word must match the title,
+  artist or album) and pick a song: it plays after the current one, and the
+  DJ introduces it (the gap's talk is re-worded; a time check already worded
+  is kept). Several requests play in order; one made during a gap plays
+  after the song the DJ has just introduced; off air the next show opens
+  with it. Requests play even on artist radio or a list.
 - **Artist radio** — play one artist only: the DJ then calls the station
   after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
   so do the page heading and tab. **Lists…** makes your own named lists of
   artists (e.g. a "Friday List"; find and tick artists), which appear in the
   same dropdown ("welcome to Friday List on Sleep Radio"). On air, the song
   already lined up next still plays first. If the library has nothing for
-  the choice, it plays everything.
+  the choice, it plays everything. The jingles say "Sleep Radio", so they
+  only play on the main mix (all artists).
 - **Birthdays** — starts empty; add a name, day and month, and optionally
   the year born. On the day, once the clock is known and outside the news
   quiet hours, the DJ wishes them a happy birthday first thing in a gap
@@ -215,6 +222,8 @@ All JSON. What the page uses, for scripts and testing:
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "phase" \| "stop"}` |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
+| `GET /api/search?q=` | Up to 40 tracks matching every word (title, artist, album), each with an `id` |
+| `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |
 | `POST /api/station` | `{"artist": name \| null}` or `{"profile": name}` |
 | `POST /api/profiles` | `{"profiles": [{"name", "artists": [...]}]}` — replace the lists |

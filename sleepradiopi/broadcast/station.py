@@ -194,6 +194,12 @@ class Station:
         self._news_ready: NewsItem | None = None
         self._opening: tuple[str, list[Step], BroadcastTrack] | None = None
         self._plan: list[Step] = []
+        self._gap_decision = None
+        self._in_gap = False
+        self._n_requested = 0                # requests at the front of the queue
+        self._pending: deque[BroadcastTrack] = deque()   # requests made during a gap
+        self._took_request = False
+        self._opening_requested = False      # the prepared opening's first song was asked for
         self._skip_for: OnAir | None = None
 
         self.on_air: OnAir | None = None
@@ -270,8 +276,13 @@ class Station:
                 self._play_track(track)
                 if self._stop.is_set():
                     break
+                with self._lock:
+                    self._in_gap = True       # a request now plays after the announced next song
                 self._run_gap()
-                track = self._take_next()
+                with self._lock:
+                    track = self._take_next()
+                    self._in_gap = False
+                    self._place_pending()
         except Exception:
             log.exception("show crashed")
         finally:
@@ -364,8 +375,73 @@ class Station:
     def _take_next(self) -> BroadcastTrack:
         self._refill()
         t = self._queue.popleft()
+        self._took_request = self._n_requested > 0
+        if self._took_request:
+            self._n_requested -= 1
         self._refill()
         return t
+
+    # --- requests: "play next" from the web page ---------------------------------------
+
+    def search(self, query: str, limit: int = 40) -> list[dict]:
+        """Tracks whose title, artist or album has every word of the query."""
+        words = query.lower().split()
+        if not words:
+            return []
+        out = []
+        for i, t in enumerate(self.tracks):
+            hay = f"{t.title} {t.artist} {t.album}".lower()
+            if all(w in hay for w in words):
+                out.append({"id": i, "title": t.title, "artist": t.artist, "album": t.album})
+        out.sort(key=lambda r: (r["artist"].lower(), r["album"].lower(), r["title"].lower()))
+        return out[:limit]
+
+    def request(self, track_id: int) -> dict:
+        """Play this track next (after any earlier requests). While a track
+        plays, the gap's talk is re-worded for it; once the gap has started,
+        it plays after the song already announced. Off air, the show opens
+        with it. Requests are kept at the front of the queue (_n_requested)."""
+        if not 0 <= track_id < len(self.tracks):
+            raise ValueError("no such track")
+        t = self.tracks[track_id]
+        prepare = replanned = False
+        with self._lock:
+            on_air = self._thread is not None and self._thread.is_alive()
+            if on_air and self._in_gap:
+                self._pending.append(t)       # placed once the announced song starts
+                after_announced = True
+            else:
+                after_announced = False
+                pos = self._n_requested
+                self._queue.insert(pos, t)
+                self._n_requested += 1
+                if on_air and pos == 0 and self._gap_decision is not None:
+                    self._replan_gap(t)
+                    replanned = True
+                elif not on_air and not (self._opening is not None and self._opening_requested):
+                    self._opening = None      # re-open the show with the request
+                    prepare = True
+            self._scan(t.path)
+            position = len(self.requests()) - 1
+        log.info("request: %s by %s (%s)", t.title, t.artist,
+                 "after the announced song" if after_announced else f"position {position}")
+        if prepare and self.tracks:
+            self._prepare_opening()
+        return {"position": position, "after_announced": after_announced, "replanned": replanned,
+                "title": t.title, "artist": t.artist}
+
+    def _place_pending(self) -> None:
+        """(show thread, under the lock) after the gap: queue requests made during it."""
+        while self._pending:
+            self._queue.insert(self._n_requested, self._pending.popleft())
+            self._n_requested += 1
+
+    def requests(self) -> list[dict]:
+        """Requested songs still to come, in order."""
+        queued = list(self._queue)[:self._n_requested] + list(self._pending)
+        if self._opening is not None and self._opening_requested:
+            queued.insert(0, self._opening[2])
+        return [{"title": t.title, "artist": t.artist} for t in queued]
 
     def _play_file(self, path: Path, on_air: OnAir, near_end=None) -> None:
         """Play a file to its end (or until skipped). near_end(end_at, again) is called
@@ -430,12 +506,32 @@ class Station:
         self._last_jingle = self._jingle_bag.popleft()
         return self._last_jingle
 
+    @property
+    def main_mix(self) -> bool:
+        """Everything, as opposed to artist radio or a list."""
+        return not (self.artist or self.profile)
+
     def _plan_gap(self, prev: BroadcastTrack, nxt: BroadcastTrack | None) -> list[Step]:
-        """onBroadcastTrackStarted: what fills the gap after [prev]."""
+        """onBroadcastTrackStarted: what fills the gap after [prev]. The decisions
+        (link or time check, jingle, birthday) are made once here and kept, so a
+        request for the next song can re-word the gap without making them again."""
         kind = self._show_clock.on_track_started(datetime.now().time())
         if kind == LinkKind.TIME_CHECK and not clock_trusted():
             kind = LinkKind.LINK   # offline, the clock may be hours out: say no times
-        jingle_due = self._jingle_due()
+        # The jingles say "Sleep Radio": none on artist radio or a list.
+        jingle_due = self._jingle_due() and self.main_mix
+        people = []
+        if self._has_voice:
+            now = datetime.now()
+            people = self.birthdays.due(now, clock_trusted())
+            if people:
+                self.birthdays.wished(now)
+                log.info("birthday wish planned for %s", ", ".join(p["name"] for p in people))
+        self._gap_decision = (kind, jingle_due, people, prev)
+        return self._build_gap(kind, jingle_due, people, prev, nxt)
+
+    def _build_gap(self, kind: LinkKind, jingle_due: bool, people: list, prev: BroadcastTrack,
+                   nxt: BroadcastTrack | None) -> list[Step]:
         b, voice = self.builder, self._has_voice
         steps: list[Step] = []
         talky = kind in (LinkKind.LINK, LinkKind.TIME_CHECK)
@@ -457,14 +553,27 @@ class Station:
             text = b.build(kind, prev, nxt, announce_every_track=self.config.announce_every_track)
             if text:
                 steps.append(Step("say", self._say(text)))
-        if voice:
-            now = datetime.now()
-            people = self.birthdays.due(now, clock_trusted())
-            if people:                        # first thing in the gap
-                steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
-                self.birthdays.wished(now)
-                log.info("birthday wish planned for %s", ", ".join(p["name"] for p in people))
+        if voice and people:                  # first thing in the gap
+            steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
         return steps
+
+    def _replan_gap(self, nxt: BroadcastTrack) -> None:
+        """The next song changed (a request) while a track plays: re-word the
+        gap's lines for it. Clock, jingle and news steps are kept as they are
+        (a time check may already be worded); only the talk is redone."""
+        kind, jingle_due, people, prev = self._gap_decision
+        old = self._plan
+        new = self._build_gap(kind, jingle_due, people, prev, nxt)
+        for i, step in enumerate(new):
+            if step.kind != "say" and i < len(old) and old[i].kind == step.kind:
+                new[i] = old[i]
+        for step in old:
+            if step.kind == "say" and step not in new:
+                step.speech.future.cancel()   # a no-op if it's already made
+        self._plan = new
+        self.next_track = nxt
+        self.gap_plan = [s.describe() for s in new]
+        log.info("next changed by request: %s by %s | after it: %s", nxt.title, nxt.artist, self.gap_plan)
 
     def set_birthdays(self, entries: list[dict]) -> None:
         """Replace the birthday list (validated; ValueError if it's wrong)."""
@@ -626,11 +735,10 @@ class Station:
         with self._lock:
             on_air = self._thread is not None and self._thread.is_alive()
             found = self._use_selection(artist, profile)
-            if on_air:
-                while len(self._queue) > 1:     # keep the one that's been announced
-                    self._queue.pop()
-            else:
-                self._queue.clear()
+            keep = max(1, self._n_requested) if on_air else self._n_requested
+            while len(self._queue) > keep:   # keep requests (and on air the announced song)
+                self._queue.pop()
+            if not on_air:
                 self._opening = None
         log.info("now playing from: %s (%s)", self.profile or self.artist or "everything", self.builder.station)
         if not on_air and self.tracks:
@@ -643,9 +751,10 @@ class Station:
         if not self.tracks:
             return
         first = self._take_next()
+        self._opening_requested = self._took_request
         greeting = self.builder.welcome_greeting(time_known=clock_trusted())
         steps: list[Step] = []
-        startup = [j for j in self.jingles if 0 < j.duration_s < STARTUP_JINGLE_MAX_S]
+        startup = [j for j in self.jingles if 0 < j.duration_s < STARTUP_JINGLE_MAX_S] if self.main_mix else []
         if self._has_voice:
             if startup:
                 steps = [Step("say", self._say(greeting)),
@@ -689,6 +798,7 @@ class Station:
             "library": {"tracks": len(self.tracks), "jingles": len(self.jingles)},
             "artist": self.artist,
             "profile": self.profile,
+            "requests": self.requests(),
             "station_name": self.builder.station,
             "voices_ready": bool(self.tts and self.tts.ready),
             "voice": {"name": self.dj_voice, "rss_mb": self.tts.last_rss_mb, "restarts": self.tts.restarts}

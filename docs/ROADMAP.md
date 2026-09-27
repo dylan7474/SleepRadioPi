@@ -48,6 +48,8 @@ modules stay in the tree until that's decided.
 14. **Artist radio and lists** — play one artist ("Beatles Radio") or your
     own named lists of artists ("Friday List on Sleep Radio").
 15. **Birthdays** — the DJ wishes people a happy birthday on the day.
+15b. **Play next** — search the library from the page and queue songs; the
+    DJ introduces them. Jingles only on the main mix.
 
 ## Next
 
@@ -55,8 +57,6 @@ modules stay in the tree until that's decided.
     the long press on the real switch; the RTC with no network.
 17. **More settings on the page** — voice, chattiness, jingles and news are
     still set in the config file.
-18. **Choose a song** — find a track and play it next (there's no request
-    queue yet).
 19. **A lighter web side** — the browser stream off by default (it runs an
     MP3 encoder all the time).
 20. **Library tools** — copying/syncing music from the desktop library.
