@@ -206,7 +206,10 @@ class SpeakerControl:
 
     def _save(self) -> None:
         if self.state_file is not None:
-            write_atomic(self.state_file, json.dumps({"volume": self.speaker.volume}))
+            try:
+                write_atomic(self.state_file, json.dumps({"volume": self.speaker.volume}))
+            except OSError as e:  # full or read-only card: lose the volume, not the thread
+                log.warning("could not save the volume: %s", e)
 
     def save_now(self) -> None:
         """Save the volume straight away, e.g. before a shutdown."""

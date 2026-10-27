@@ -181,6 +181,7 @@ class Station:
         self._tts_pool = ThreadPoolExecutor(1, thread_name_prefix="speech")
         self._scan_pool = ThreadPoolExecutor(1, thread_name_prefix="scan")
         self._scan_futures: dict[Path, Future] = {}
+        self._scan_lock = threading.Lock()  # not _lock: request() calls _scan while holding that
         for j in self.jingles:  # a handful of short files: scan them all once, up front
             self._scan(j.path)
 
@@ -361,10 +362,11 @@ class Station:
     # --- tracks ----------------------------------------------------------------------
 
     def _scan(self, path: Path) -> Future:
-        fut = self._scan_futures.get(path)
-        if fut is None:
-            fut = self._scan_futures[path] = self._scan_pool.submit(self.scans.scan, path)
-        return fut
+        with self._scan_lock:
+            fut = self._scan_futures.get(path)
+            if fut is None:
+                fut = self._scan_futures[path] = self._scan_pool.submit(self.scans.scan, path)
+            return fut
 
     def _refill(self) -> None:
         while len(self._queue) < LOOKAHEAD:
@@ -451,7 +453,8 @@ class Station:
         makes that projected end wrong."""
         scan = self._await(self._scan(path), 60) or pcm.NO_SCAN
         if path not in self._jingle_paths:  # jingles recur; tracks' futures can go
-            self._scan_futures.pop(path, None)
+            with self._scan_lock:
+                self._scan_futures.pop(path, None)
         playable_s = scan.playable_ms / 1000
         on_air.duration_s = playable_s
         on_air.started = time.time()
